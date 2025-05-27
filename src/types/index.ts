@@ -11,6 +11,10 @@ export interface AudibleAudioBlock extends BaseBlock {
   isSilent?: false; // Can be omitted or explicitly false
   waveform: WaveformType;
   frequency: number; // Hz
+  attack: number; // seconds
+  decay: number; // seconds
+  sustainLevel: number; // 0.0 to 1.0
+  release: number; // seconds
 }
 
 export interface SilentAudioBlock extends BaseBlock {
@@ -18,3 +22,4 @@ export interface SilentAudioBlock extends BaseBlock {
 }
 
 export type AudioBlock = AudibleAudioBlock | SilentAudioBlock;
+

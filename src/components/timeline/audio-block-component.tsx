@@ -30,6 +30,52 @@ const waveformColors: Record<WaveformType, string> = {
 
 const silentBlockColor = 'from-slate-300 to-slate-500';
 
+const ADSR_VISUAL_HEIGHT = 30; // Logical height for ADSR curve visualization
+
+const AdsrVisualizer: React.FC<{ block: AudibleAudioBlock; widthInPixels: number }> = ({ block, widthInPixels }) => {
+  const { duration, attack, decay, sustainLevel, release } = block;
+
+  if (duration <= 0) return null;
+
+  const y_bottom = ADSR_VISUAL_HEIGHT;
+  const y_peak = 0;
+  const y_sustain = (1 - sustainLevel) * ADSR_VISUAL_HEIGHT;
+
+  // Calculate x coordinates based on time scaled by widthInPixels / duration
+  // This makes x coordinates relative to the block's actual pixel width
+  const timeToPx = (time: number) => (time / duration) * widthInPixels;
+
+  const x_start = 0;
+  const x_attack_end = timeToPx(attack);
+  const x_decay_end = timeToPx(attack + decay);
+  // Sustain phase ends when release phase begins
+  const x_release_start = timeToPx(duration - release);
+  const x_end = timeToPx(duration);
+  
+  // Ensure points are in chronological order and within bounds
+  const p1x = Math.max(x_start, Math.min(x_attack_end, widthInPixels));
+  const p2x = Math.max(p1x, Math.min(x_decay_end, widthInPixels));
+  const p3x = Math.max(p2x, Math.min(x_release_start, widthInPixels));
+  const p4x = Math.max(p3x, Math.min(x_end, widthInPixels));
+
+
+  const pathData = `M ${x_start},${y_bottom} L ${p1x},${y_peak} L ${p2x},${y_sustain} L ${p3x},${y_sustain} L ${p4x},${y_bottom}`;
+
+  return (
+    <svg
+      width="100%" // Takes full width of its container
+      height={ADSR_VISUAL_HEIGHT}
+      viewBox={`0 0 ${widthInPixels} ${ADSR_VISUAL_HEIGHT}`}
+      preserveAspectRatio="none"
+      className="absolute bottom-1 left-0 w-full pointer-events-none"
+      style={{ opacity: 0.33 }}
+    >
+      <path d={pathData} fill="currentColor" stroke="currentColor" strokeWidth="0.5" />
+    </svg>
+  );
+};
+
+
 export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
   block,
   isSelected,
@@ -47,7 +93,7 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
           isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
           `bg-gradient-to-br ${silentBlockColor} text-white`
         )}
-        style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.5, 30)}px` }}
+        style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px` }}
         onClick={onClick}
         role="button"
         aria-pressed={isSelected}
@@ -74,26 +120,27 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
   return (
     <Card
       className={cn(
-        'h-28 flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group',
+        'h-28 flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group overflow-hidden', // Added overflow-hidden
         isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
         `bg-gradient-to-br ${gradientClass} text-white`
       )}
-      style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.5, 30)}px` }}
+      style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px` }}
       onClick={onClick}
       role="button"
       aria-pressed={isSelected}
       aria-label={`Audio block: ${audibleBlock.waveform}, ${audibleBlock.frequency}Hz, ${audibleBlock.duration}s`}
     >
-      <CardHeader className="p-2 flex-row items-center justify-between space-y-0">
+      <CardHeader className="p-2 flex-row items-center justify-between space-y-0 z-10">
         <CardTitle className="text-xs font-medium truncate">
           {audibleBlock.waveform.charAt(0).toUpperCase() + audibleBlock.waveform.slice(1)}
         </CardTitle>
         <Icon className="h-4 w-4 text-white/80" />
       </CardHeader>
-      <CardContent className="p-2 text-center flex-grow flex flex-col justify-center">
+      <CardContent className="p-2 text-center flex-grow flex flex-col justify-center z-10">
         <p className="text-lg font-semibold">{audibleBlock.frequency} Hz</p>
         <p className="text-xs opacity-80">{audibleBlock.duration.toFixed(1)} s</p>
       </CardContent>
+      {width > 0 && <AdsrVisualizer block={audibleBlock} widthInPixels={width} />}
     </Card>
   );
 };
