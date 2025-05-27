@@ -4,7 +4,7 @@ import type React from 'react';
 import type { AudioBlock, WaveformType } from '@/types';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { SineWave, Activity, Square, TrendingUp } from 'lucide-react';
+import { Waves, Activity, Square, TrendingUp } from 'lucide-react'; // Changed SineWave to Waves
 
 interface AudioBlockComponentProps {
   block: AudioBlock;
@@ -14,8 +14,8 @@ interface AudioBlockComponentProps {
 }
 
 const waveformIcons: Record<WaveformType, React.ElementType> = {
-  sine: SineWave,
-  triangle: Activity, // Placeholder, consider a custom SVG or different icon
+  sine: Waves, // Changed SineWave to Waves
+  triangle: Activity, 
   square: Square,
   sawtooth: TrendingUp,
 };

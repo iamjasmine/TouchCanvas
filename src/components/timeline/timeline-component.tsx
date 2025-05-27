@@ -5,6 +5,7 @@ import type { AudioBlock } from '@/types';
 import { AudioBlockComponent } from './audio-block-component';
 import { PlaybackIndicatorComponent } from './playback-indicator-component';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 interface TimelineComponentProps {
