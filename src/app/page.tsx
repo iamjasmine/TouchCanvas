@@ -185,7 +185,10 @@ export default function MusicSyncPage() {
   }, [toast, channels]);
 
 
-  const handleAddBlock = useCallback(() => {
+  const handleAddBlock = useCallback(async () => {
+    if (Tone.context.state !== 'running') {
+        await startAudioContext();
+    }
     if (!selectedChannelId) {
       toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
       return;
@@ -208,9 +211,12 @@ export default function MusicSyncPage() {
     }));
     setSelectedBlockId(newBlockId);
     toast({ title: "Audio Block Added", description: `Block added to ${selectedChannel?.name}.` });
-  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
+  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
 
-  const handleAddSilenceBlock = useCallback(() => {
+  const handleAddSilenceBlock = useCallback(async () => {
+    if (Tone.context.state !== 'running') {
+        await startAudioContext();
+    }
     if (!selectedChannelId) {
       toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
       return;
@@ -227,7 +233,7 @@ export default function MusicSyncPage() {
     }));
     setSelectedBlockId(newBlockId);
     toast({ title: "Silence Block Added", description: `Silence added to ${selectedChannel?.name}.` });
-  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
+  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
   
   const handleSelectBlock = useCallback((channelId: string, blockId: string) => {
     setSelectedChannelId(channelId); 
@@ -305,12 +311,19 @@ export default function MusicSyncPage() {
   }, []);
 
   const handlePlay = useCallback(async () => {
-    if (!audioContextStarted) await startAudioContext();
+    if (!audioContextStarted) {
+      await startAudioContext(); 
+    }
+
     if (Tone.context.state !== 'running') {
       try {
-        await Tone.start();
+        await Tone.start(); 
+        if (Tone.context.state !== 'running') { 
+          toast({ title: "Audio Context Error", description: "Could not activate audio. Please try again.", variant: "destructive" });
+          return;
+        }
       } catch (e) {
-        toast({ title: "Audio Error", description: `Could not start audio: ${e instanceof Error ? e.message : String(e)}`, variant: "destructive" });
+        toast({ title: "Audio Activation Error", description: `Error starting audio: ${e instanceof Error ? e.message : String(e)}`, variant: "destructive" });
         return;
       }
     }
@@ -355,14 +368,14 @@ export default function MusicSyncPage() {
       if (channel.isMuted || channel.audioBlocks.length === 0) return;
 
       const channelSpecificNodes: ActiveChannelAudioNodes[] = [];
-      const channelVolDb = channel.volume > 0 ? Tone.gainToDb(channel.volume) : -Infinity;
+      const channelVolDb = (channel.volume > 0 && !channel.isMuted) ? Tone.gainToDb(channel.volume) : -Infinity;
       const channelVolumeNode = new Tone.Volume(channelVolDb).connect(masterVolumeNodeRef.current!);
       
       channel.audioBlocks.forEach(block => {
         if (block.isSilent) return;
 
         const audibleBlock = block as AudibleAudioBlock;
-        if (audibleBlock.duration <= 0) return; // Skip zero-duration audible blocks
+        if (audibleBlock.duration <= 0) return; 
 
         const osc = new Tone.Oscillator({
           type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6, 
@@ -412,7 +425,7 @@ export default function MusicSyncPage() {
       Tone.Transport.loopEnd = longestChannelDuration;
     } else {
       Tone.Transport.loop = false;
-      if (longestChannelDuration > 0) { // Schedule stop only if there's something to play
+      if (longestChannelDuration > 0) { 
         Tone.Transport.scheduleOnce(() => {
           setIsPlaying(false);
           setCurrentPlayTime(0); 
@@ -452,7 +465,7 @@ export default function MusicSyncPage() {
       animationFrameId.current = requestAnimationFrame(update);
     } else {
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-      // setCurrentPlayTime(Tone.Transport.seconds); // Keep current time on stop, don't reset to 0 here
+      setCurrentPlayTime(Tone.Transport.seconds); 
     }
     return () => { if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current); };
   }, [isPlaying]);
@@ -542,7 +555,5 @@ export default function MusicSyncPage() {
     </div>
   );
 }
-
-    
 
     
