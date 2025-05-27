@@ -4,21 +4,19 @@
 import type React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Tone from 'tone';
-import type { AudioBlock, AudibleAudioBlock, SilentAudioBlock } from '@/types';
+import type { AudioBlock, AudibleAudioBlock, SilentAudioBlock, Channel, WaveformType } from '@/types';
 import { useToneContext } from '@/components/providers/tone-provider';
 import { ControlsComponent } from '@/components/controls/controls-component';
-import { TimelineComponent } from '@/components/timeline/timeline-component';
 import { PropertyPanelComponent } from '@/components/property-panel/property-panel.tsx';
-import { Card } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
-import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
+import { ChannelViewComponent } from '@/components/channel/channel-view';
+import { PlaybackIndicatorComponent } from '@/components/timeline/playback-indicator-component';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { PlusIcon } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { PlusIcon, ListMusicIcon } from 'lucide-react';
 
-const PIXELS_PER_SECOND = 60; // Defines horizontal scale of timeline
-const MIN_SUSTAIN_TIME = 0.05; // Minimum duration for the sustain phase in seconds
+const PIXELS_PER_SECOND = 60;
+const MIN_SUSTAIN_TIME = 0.05;
 
 const calculateADSRDefaults = (duration: number): Pick<AudibleAudioBlock, 'attack' | 'decay' | 'sustainLevel' | 'release'> => {
   return {
@@ -79,29 +77,41 @@ const adjustADSR = (block: AudibleAudioBlock): AudibleAudioBlock => {
   };
 };
 
+type ActiveChannelAudioNodes = {
+  osc: Tone.Oscillator;
+  adsrGain: Tone.Gain;
+  channelVolumeNode: Tone.Volume;
+};
 
 export default function MusicSyncPage() {
   const { audioContextStarted, startAudioContext } = useToneContext();
   const { toast } = useToast();
-  const [audioBlocks, setAudioBlocks] = useState<AudioBlock[]>([]);
+
+  const initialChannel: Channel = {
+    id: crypto.randomUUID(),
+    name: 'Channel 1',
+    volume: 0.75,
+    isMuted: false,
+    audioBlocks: [],
+  };
+  const [channels, setChannels] = useState<Channel[]>([initialChannel]);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(initialChannel.id);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayTime, setCurrentPlayTime] = useState(0); 
   const [isLooping, setIsLooping] = useState(false);
   const [outputMode, setOutputMode] = useState<'mixed' | 'independent'>('mixed');
-  const [masterVolume, setMasterVolume] = useState<number>(0.75); // 0 to 1
+  const [masterVolume, setMasterVolume] = useState<number>(0.75);
 
-  const activeAudioNodes = useRef<{ osc: Tone.Oscillator, gainEnv?: Tone.Gain }[]>([]);
+  const activeAudioNodesMap = useRef<Map<string, ActiveChannelAudioNodes[]>>(new Map());
   const animationFrameId = useRef<number | null>(null);
   const masterVolumeNodeRef = useRef<Tone.Volume | null>(null);
   
-  const isInitialMount = useRef({
-    looping: true,
-    outputMode: true,
-    volume: true,
-  });
+  const isInitialMount = useRef({ looping: true, outputMode: true, volume: true });
 
-  const selectedBlock = audioBlocks.find(block => block.id === selectedBlockId) || null;
+  const selectedChannel = channels.find(ch => ch.id === selectedChannelId) || null;
+  const selectedBlock = selectedChannel?.audioBlocks.find(block => block.id === selectedBlockId) || null;
 
   useEffect(() => {
     if (audioContextStarted && !masterVolumeNodeRef.current) {
@@ -123,8 +133,7 @@ export default function MusicSyncPage() {
     setMasterVolume(Math.max(0, Math.min(1, newVolume))); 
   }, []);
 
-
-  const recalculateStartTimes = useCallback((blocks: AudioBlock[]): AudioBlock[] => {
+  const recalculateChannelBlockStartTimes = useCallback((blocks: AudioBlock[]): AudioBlock[] => {
     let cumulativeTime = 0;
     return blocks.map(block => {
       const newStartTime = cumulativeTime;
@@ -133,259 +142,272 @@ export default function MusicSyncPage() {
     });
   }, []);
 
+  const handleAddChannel = useCallback(() => {
+    const newChannelId = crypto.randomUUID();
+    const newChannel: Channel = {
+      id: newChannelId,
+      name: `Channel ${channels.length + 1}`,
+      volume: 0.75,
+      isMuted: false,
+      audioBlocks: [],
+    };
+    setChannels(prev => [...prev, newChannel]);
+    setSelectedChannelId(newChannelId);
+    toast({ title: "Channel Added", description: `New ${newChannel.name} created.` });
+  }, [channels.length, toast]);
+
+  const handleSelectChannel = useCallback((channelId: string) => {
+    setSelectedChannelId(channelId);
+    setSelectedBlockId(null); // Deselect block when changing channel
+  }, []);
+  
+  const handleUpdateChannel = useCallback((channelId: string, updates: Partial<Pick<Channel, 'name' | 'volume' | 'isMuted'>>) => {
+    setChannels(prevChannels =>
+      prevChannels.map(ch =>
+        ch.id === channelId ? { ...ch, ...updates } : ch
+      )
+    );
+    if (updates.volume !== undefined) {
+        toast({ title: "Channel Volume Changed", description: `${channels.find(c=>c.id===channelId)?.name} volume to ${Math.round(updates.volume * 100)}%` });
+    }
+    if (updates.isMuted !== undefined) {
+        toast({ title: `Channel ${updates.isMuted ? "Muted" : "Unmuted"}`, description: `${channels.find(c=>c.id===channelId)?.name} is now ${updates.isMuted ? "muted" : "unmuted"}.` });
+    }
+  }, [toast, channels]);
+
+
   const handleAddBlock = useCallback(() => {
+    if (!selectedChannelId) {
+      toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
+      return;
+    }
     const newBlockId = crypto.randomUUID();
     const initialDuration = 2;
     const adsrDefaults = calculateADSRDefaults(initialDuration);
     
     let newBlock: AudibleAudioBlock = {
-      id: newBlockId,
-      waveform: 'sine',
-      frequency: 100,
-      duration: initialDuration,
-      startTime: 0, 
-      isSilent: false,
-      ...adsrDefaults,
+      id: newBlockId, waveform: 'sine', frequency: 100, duration: initialDuration, startTime: 0, isSilent: false, ...adsrDefaults,
     };
     newBlock = adjustADSR(newBlock); 
 
-    setAudioBlocks(prevBlocks => {
-      const updatedBlocks = [...prevBlocks, newBlock];
-      return recalculateStartTimes(updatedBlocks);
-    });
+    setChannels(prevChannels => prevChannels.map(ch => {
+      if (ch.id === selectedChannelId) {
+        const updatedBlocks = [...ch.audioBlocks, newBlock];
+        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
+      }
+      return ch;
+    }));
     setSelectedBlockId(newBlockId);
-    toast({ title: "Audio Block Added", description: "A new audio block with ADSR envelope has been added." });
-  }, [recalculateStartTimes, toast]);
+    toast({ title: "Audio Block Added", description: `Block added to ${selectedChannel?.name}.` });
+  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
 
   const handleAddSilenceBlock = useCallback(() => {
+    if (!selectedChannelId) {
+      toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
+      return;
+    }
     const newBlockId = crypto.randomUUID();
-    const newBlock: SilentAudioBlock = {
-      id: newBlockId,
-      duration: 1, 
-      startTime: 0, 
-      isSilent: true,
-    };
-    setAudioBlocks(prevBlocks => {
-      const updatedBlocks = [...prevBlocks, newBlock];
-      return recalculateStartTimes(updatedBlocks);
-    });
-    setSelectedBlockId(newBlockId);
-    toast({ title: "Silence Block Added", description: "A new silence block has been added." });
-  }, [recalculateStartTimes, toast]);
+    const newBlock: SilentAudioBlock = { id: newBlockId, duration: 1, startTime: 0, isSilent: true };
 
-  const handleSelectBlock = useCallback((id: string) => {
-    setSelectedBlockId(id);
+    setChannels(prevChannels => prevChannels.map(ch => {
+      if (ch.id === selectedChannelId) {
+        const updatedBlocks = [...ch.audioBlocks, newBlock];
+        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
+      }
+      return ch;
+    }));
+    setSelectedBlockId(newBlockId);
+    toast({ title: "Silence Block Added", description: `Silence added to ${selectedChannel?.name}.` });
+  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
+  
+  const handleSelectBlock = useCallback((channelId: string, blockId: string) => {
+    setSelectedChannelId(channelId); // Ensure correct channel is selected
+    setSelectedBlockId(blockId);
   }, []);
 
   const handleUpdateBlock = useCallback((updatedBlockData: AudioBlock) => {
-    setAudioBlocks(prevBlocks => {
-      const updatedBlocks = prevBlocks.map(b => {
-        if (b.id === updatedBlockData.id) {
-          if (!updatedBlockData.isSilent && !b.isSilent) { 
-            let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
-            const oldAudible = b as AudibleAudioBlock;
+    if (!selectedChannelId || !selectedBlockId) return;
 
-            if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0) {
-              const durationRatio = newAudible.duration / oldAudible.duration;
-              if (newAudible.attack === oldAudible.attack) {
-                newAudible.attack = oldAudible.attack * durationRatio;
+    setChannels(prevChannels => prevChannels.map(ch => {
+      if (ch.id === selectedChannelId) {
+        const updatedBlocks = ch.audioBlocks.map(b => {
+          if (b.id === updatedBlockData.id) {
+            if (!updatedBlockData.isSilent && !b.isSilent) {
+              let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
+              const oldAudible = b as AudibleAudioBlock;
+              if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0) {
+                const durationRatio = newAudible.duration / oldAudible.duration;
+                if (newAudible.attack === oldAudible.attack) newAudible.attack = oldAudible.attack * durationRatio;
+                if (newAudible.decay === oldAudible.decay) newAudible.decay = oldAudible.decay * durationRatio;
+                if (newAudible.release === oldAudible.release) newAudible.release = oldAudible.release * durationRatio;
               }
-              if (newAudible.decay === oldAudible.decay) {
-                newAudible.decay = oldAudible.decay * durationRatio;
-              }
-              if (newAudible.release === oldAudible.release) {
-                newAudible.release = oldAudible.release * durationRatio;
-              }
+              return adjustADSR(newAudible);
             }
-            return adjustADSR(newAudible); 
+            return updatedBlockData;
           }
-          return updatedBlockData; 
-        }
-        return b;
-      });
-      return recalculateStartTimes(updatedBlocks);
-    });
-  }, [recalculateStartTimes]);
-
+          return b;
+        });
+        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
+      }
+      return ch;
+    }));
+  }, [selectedChannelId, selectedBlockId, recalculateChannelBlockStartTimes]);
 
   const handleDeleteBlock = useCallback((blockIdToDelete: string) => {
-    setAudioBlocks(prevBlocks => {
-      const filteredBlocks = prevBlocks.filter(b => b.id !== blockIdToDelete);
-      return recalculateStartTimes(filteredBlocks);
-    });
-    setSelectedBlockId(null); 
-    toast({ title: "Block Deleted", description: "The audio block has been removed.", variant: "destructive" });
-  }, [recalculateStartTimes, toast]);
-
-
-  useEffect(() => {
-    if (isInitialMount.current.looping) {
-        isInitialMount.current.looping = false;
-    } else {
-        if (toast && typeof isLooping === 'boolean') {
-            toast({
-                title: isLooping ? "Loop Enabled" : "Loop Disabled",
-                description: isLooping ? "Playback will now loop." : "Playback will not loop.",
-            });
-        }
-    }
-  }, [isLooping, toast]);
-
-  useEffect(() => {
-    if (isInitialMount.current.outputMode) {
-        isInitialMount.current.outputMode = false;
-    } else {
-      if (toast) {
-        toast({
-          title: "Output Mode Changed",
-          description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.`,
-        });
+    if (!selectedChannelId) return;
+    setChannels(prevChannels => prevChannels.map(ch => {
+      if (ch.id === selectedChannelId) {
+        const filteredBlocks = ch.audioBlocks.filter(b => b.id !== blockIdToDelete);
+        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(filteredBlocks) };
       }
-    }
-  }, [outputMode, toast]);
+      return ch;
+    }));
+    setSelectedBlockId(null); 
+    toast({ title: "Block Deleted", description: `Block removed from ${selectedChannel?.name}.`, variant: "destructive" });
+  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
 
-  useEffect(() => {
-    if (isInitialMount.current.volume) {
-        isInitialMount.current.volume = false;
-    } else {
-        if (toast) {
-            toast({
-                title: "Master Volume Changed",
-                description: `Volume set to ${Math.round(masterVolume * 100)}%`,
-            });
-        }
-    }
-  }, [masterVolume, toast]);
+  useEffect(() => { if (!isInitialMount.current.looping) { if (toast && typeof isLooping === 'boolean') { toast({ title: isLooping ? "Loop Enabled" : "Loop Disabled", description: isLooping ? "Playback will now loop." : "Playback will not loop." }); } } else { isInitialMount.current.looping = false; } }, [isLooping, toast]);
+  useEffect(() => { if (!isInitialMount.current.outputMode) { if (toast) { toast({ title: "Output Mode Changed", description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.` }); } } else { isInitialMount.current.outputMode = false; } }, [outputMode, toast]);
+  useEffect(() => { if (!isInitialMount.current.volume) { if (toast) { toast({ title: "Master Volume Changed", description: `Volume set to ${Math.round(masterVolume * 100)}%` }); } } else { isInitialMount.current.volume = false; } }, [masterVolume, toast]);
 
   const handleToggleLoop = useCallback(() => {
     setIsLooping(prev => {
       const newLoopState = !prev;
-      if (isPlaying && audioBlocks.length > 0) {
-        const totalDuration = audioBlocks.reduce((sum, b) => sum + b.duration, 0);
+      const longestChannelDuration = Math.max(0, ...channels.map(ch => ch.audioBlocks.reduce((sum, b) => sum + b.duration, 0)));
+      if (isPlaying && longestChannelDuration > 0) {
         if (newLoopState) {
           Tone.Transport.loop = true;
           Tone.Transport.loopStart = 0;
-          Tone.Transport.loopEnd = totalDuration;
+          Tone.Transport.loopEnd = longestChannelDuration;
         } else {
           Tone.Transport.loop = false;
         }
       }
       return newLoopState;
     });
-  }, [isPlaying, audioBlocks]);
+  }, [isPlaying, channels]);
 
   const handleToggleOutputMode = useCallback(() => {
     setOutputMode(prevMode => (prevMode === 'mixed' ? 'independent' : 'mixed'));
   }, []);
 
   const handlePlay = useCallback(async () => {
-    if (!audioContextStarted) {
-      await startAudioContext();
+    if (!audioContextStarted) await startAudioContext();
+    if (Tone.context.state !== 'running') await Tone.start();
+    if (!masterVolumeNodeRef.current) {
+      if (audioContextStarted) masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
+      else { toast({ title: "Audio Error", description: "Master volume node not ready.", variant: "destructive"}); return; }
     }
-    if (Tone.context.state !== 'running') {
-      await Tone.start(); 
-    }
-    if (!masterVolumeNodeRef.current) { 
-        if (audioContextStarted) { 
-             masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
-        } else {
-            toast({ title: "Audio Error", description: "Master volume node not ready.", variant: "destructive"});
-            return;
-        }
-    }
-    if (audioBlocks.length === 0) {
-      toast({ title: "Cannot Play", description: "Add some audio blocks first!", variant: "destructive" });
+    if (channels.every(ch => ch.audioBlocks.length === 0)) {
+      toast({ title: "Cannot Play", description: "Add some audio blocks to at least one channel!", variant: "destructive" });
       return;
     }
 
-    Tone.Transport.cancel(); 
-    activeAudioNodes.current.forEach(nodes => {
-      nodes.osc.dispose();
-      nodes.gainEnv?.dispose();
+    Tone.Transport.cancel();
+    activeAudioNodesMap.current.forEach(channelNodes => {
+      channelNodes.forEach(nodes => {
+        nodes.osc.dispose();
+        nodes.adsrGain.dispose();
+        nodes.channelVolumeNode.dispose();
+      });
     });
-    activeAudioNodes.current = [];
+    activeAudioNodesMap.current.clear();
 
-    audioBlocks.forEach(block => {
-      if (block.isSilent) return;
+    channels.forEach(channel => {
+      if (channel.isMuted || channel.audioBlocks.length === 0) return;
 
-      const audibleBlock = block as AudibleAudioBlock;
-      const osc = new Tone.Oscillator({
-        type: audibleBlock.waveform,
-        frequency: audibleBlock.frequency,
-        volume: -6, 
-      }).start(audibleBlock.startTime); 
-
-      osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); 
-
-      const gainEnv = new Tone.Gain(0).connect(masterVolumeNodeRef.current!);
-      osc.connect(gainEnv);
-      activeAudioNodes.current.push({ osc, gainEnv });
-
-      const { startTime, duration, attack, decay, sustainLevel, release } = audibleBlock;
+      const channelSpecificNodes: ActiveChannelAudioNodes[] = [];
+      const channelVolumeNode = new Tone.Volume(Tone.gainToDb(channel.volume)).connect(masterVolumeNodeRef.current!);
       
-      const attackEndTime = startTime + attack;
-      const decayEndTime = attackEndTime + decay;
-      const releaseStartTime = startTime + duration - release; 
-      const effectiveEndTime = startTime + duration;
+      channel.audioBlocks.forEach(block => {
+        if (block.isSilent) return;
 
-      gainEnv.gain.setValueAtTime(0, startTime);
-      gainEnv.gain.linearRampToValueAtTime(1, attackEndTime); 
-      
-      const sustainPhaseStartTime = decayEndTime;
-      const sustainPhaseEndTime = releaseStartTime;
+        const audibleBlock = block as AudibleAudioBlock;
+        const osc = new Tone.Oscillator({
+          type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6, // Initial volume before ADSR
+        }).start(audibleBlock.startTime);
+        osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1);
 
-      if (sustainPhaseStartTime < sustainPhaseEndTime) { 
-        gainEnv.gain.linearRampToValueAtTime(sustainLevel, sustainPhaseStartTime); 
-        if (sustainPhaseEndTime > sustainPhaseStartTime) { 
-             gainEnv.gain.setValueAtTime(sustainLevel, sustainPhaseEndTime);
+        const adsrGain = new Tone.Gain(0).connect(channelVolumeNode);
+        osc.connect(adsrGain);
+        channelSpecificNodes.push({ osc, adsrGain, channelVolumeNode });
+
+        const { startTime, duration, attack, decay, sustainLevel, release } = audibleBlock;
+        const attackEndTime = startTime + attack;
+        const decayEndTime = attackEndTime + decay;
+        const releaseStartTime = startTime + duration - release;
+        const effectiveEndTime = startTime + duration;
+
+        adsrGain.gain.setValueAtTime(0, startTime);
+        adsrGain.gain.linearRampToValueAtTime(1, attackEndTime);
+        
+        const sustainPhaseStartTime = decayEndTime;
+        const sustainPhaseEndTime = releaseStartTime;
+
+        if (sustainPhaseStartTime < sustainPhaseEndTime) {
+          adsrGain.gain.linearRampToValueAtTime(sustainLevel, sustainPhaseStartTime);
+          if (sustainPhaseEndTime > sustainPhaseStartTime) {
+            adsrGain.gain.setValueAtTime(sustainLevel, sustainPhaseEndTime);
+          }
+          adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
+        } else {
+          const actualDecayOrTransitionTime = Math.min(decayEndTime, releaseStartTime);
+          adsrGain.gain.linearRampToValueAtTime(sustainLevel, actualDecayOrTransitionTime);
+          if (releaseStartTime >= startTime && releaseStartTime < effectiveEndTime) {
+            const valueAtReleaseStart = adsrGain.gain.getValueAtTime(releaseStartTime);
+            adsrGain.gain.setValueAtTime(valueAtReleaseStart, releaseStartTime);
+            adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
+          } else if (releaseStartTime >= effectiveEndTime) {
+            adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
+          } else {
+            adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
+          }
         }
-        gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime); 
-      } else { 
-        const actualDecayOrTransitionTime = Math.min(decayEndTime, releaseStartTime);
-        gainEnv.gain.linearRampToValueAtTime(sustainLevel, actualDecayOrTransitionTime);
-        if (releaseStartTime >= startTime && releaseStartTime < effectiveEndTime) {
-             const valueAtReleaseStart = gainEnv.gain.getValueAtTime(releaseStartTime);
-             gainEnv.gain.setValueAtTime(valueAtReleaseStart, releaseStartTime); 
-             gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime);
-        } else if (releaseStartTime >= effectiveEndTime) { 
-             gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime); 
-        } else { 
-             gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime);
-        }
-      }
+      });
+      activeAudioNodesMap.current.set(channel.id, channelSpecificNodes);
     });
 
-    const totalDuration = audioBlocks.reduce((sum, b) => sum + b.duration, 0);
+    const longestChannelDuration = Math.max(0, ...channels.map(ch => ch.audioBlocks.reduce((sum, b) => sum + b.duration, 0)));
 
-    if (isLooping) {
+    if (isLooping && longestChannelDuration > 0) {
       Tone.Transport.loop = true;
       Tone.Transport.loopStart = 0;
-      Tone.Transport.loopEnd = totalDuration;
+      Tone.Transport.loopEnd = longestChannelDuration;
     } else {
       Tone.Transport.loop = false;
-      Tone.Transport.scheduleOnce(() => {
-        setIsPlaying(false);
-        setCurrentPlayTime(0); 
-        Tone.Transport.position = 0; 
-      }, totalDuration + 0.01); 
+      if (longestChannelDuration > 0) {
+        Tone.Transport.scheduleOnce(() => {
+          setIsPlaying(false);
+          setCurrentPlayTime(0);
+          Tone.Transport.position = 0;
+        }, longestChannelDuration + 0.01);
+      } else { // No blocks to play, effectively stop immediately
+         setIsPlaying(false);
+         setCurrentPlayTime(0);
+         Tone.Transport.position = 0;
+      }
     }
 
     Tone.Transport.start();
     setIsPlaying(true);
-  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping, masterVolume, setCurrentPlayTime]);
+  }, [audioContextStarted, startAudioContext, toast, isLooping, masterVolume, channels, setCurrentPlayTime]);
 
 
   const handleStop = useCallback(() => {
     Tone.Transport.stop();
     Tone.Transport.cancel(); 
     Tone.Transport.loop = false; 
-    activeAudioNodes.current.forEach(nodes => {
-      nodes.osc.dispose();
-      nodes.gainEnv?.dispose();
+    activeAudioNodesMap.current.forEach(channelNodes => {
+      channelNodes.forEach(nodes => {
+        nodes.osc.dispose();
+        nodes.adsrGain.dispose();
+        nodes.channelVolumeNode.dispose(); // Dispose channel-specific volume node
+      });
     });
-    activeAudioNodes.current = [];
+    activeAudioNodesMap.current.clear();
     setIsPlaying(false);
     setCurrentPlayTime(0);
+    Tone.Transport.position = 0;
   }, []);
 
   useEffect(() => {
@@ -396,119 +418,102 @@ export default function MusicSyncPage() {
       };
       animationFrameId.current = requestAnimationFrame(update);
     } else {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       setCurrentPlayTime(Tone.Transport.seconds); 
     }
-    return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
-    };
+    return () => { if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current); };
   }, [isPlaying]);
 
-  useEffect(() => {
+  useEffect(() => { // Global cleanup on unmount
     return () => {
       Tone.Transport.stop();
       Tone.Transport.cancel();
       Tone.Transport.loop = false;
-      activeAudioNodes.current.forEach(nodes => {
-        nodes.osc.dispose();
-        nodes.gainEnv?.dispose();
+      activeAudioNodesMap.current.forEach(channelNodes => {
+        channelNodes.forEach(nodes => {
+          nodes.osc.dispose();
+          nodes.adsrGain.dispose();
+          nodes.channelVolumeNode.dispose();
+        });
       });
-      activeAudioNodes.current = [];
+      activeAudioNodesMap.current.clear();
+      masterVolumeNodeRef.current?.dispose();
     };
   }, []);
+  
+  const totalTimelineWidth = Math.max(300, ...channels.map(ch => ch.audioBlocks.reduce((sum, block) => sum + block.duration * PIXELS_PER_SECOND, 0) + PIXELS_PER_SECOND));
+
 
   return (
-    <SidebarProvider>
-      <Sidebar>
-        <SidebarHeader className="p-4 border-b">
-          <h2 className="text-xl font-semibold text-sidebar-foreground">Channels</h2>
-        </SidebarHeader>
-        <SidebarContent>
-          <div className="p-4 space-y-4">
-            <div>
-              <h3 className="text-base font-medium text-sidebar-foreground mb-2">Channel 1</h3>
-              <div className="space-y-1">
-                <Label htmlFor="channel-1-volume" className="text-sm text-sidebar-foreground/80">
-                  Volume: {Math.round(masterVolume * 100)}%
-                </Label>
-                <Slider
-                  id="channel-1-volume"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={[masterVolume]}
-                  onValueChange={(value) => handleMasterVolumeChange(value[0])}
-                  className="[&>span]:bg-sidebar-primary [&>span>span]:border-sidebar-primary [&>span>span]:bg-sidebar-background"
-                />
-              </div>
-            </div>
-            {/* Future channels would go here */}
+    <div className="flex flex-col h-screen bg-gradient-to-br from-[hsl(var(--background)/0.5)] via-[hsl(var(--muted)/0.5)] to-[hsl(var(--background)/0.5)] p-0 sm:p-4 md:p-8">
+      <Card className="flex-grow flex flex-col shadow-2xl overflow-hidden bg-card rounded-none sm:rounded-xl h-full">
+        <header className="p-4 sm:p-6 border-b flex items-center justify-between sticky top-0 bg-card/80 backdrop-blur-sm z-10">
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-bold text-gradient-primary-accent-secondary flex items-center">
+              <ListMusicIcon className="mr-3 h-8 w-8" />
+              MusicSync
+            </h1>
+            <p className="text-muted-foreground text-sm sm:text-base mt-1">Craft your unique sound sequences, channel by channel.</p>
           </div>
-        </SidebarContent>
-        <SidebarFooter className="p-4 border-t">
-          <Button disabled variant="outline" className="w-full border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
-            <PlusIcon className="mr-2 h-5 w-5" />
-            Add Channel
-          </Button>
-        </SidebarFooter>
-      </Sidebar>
+        </header>
 
-      <SidebarInset>
-        <div className="flex flex-col h-full bg-gradient-to-br from-[hsl(var(--background)/0.5)] via-[hsl(var(--muted)/0.5)] to-[hsl(var(--background)/0.5)]">
-          <Card className="flex-grow flex flex-col shadow-2xl overflow-hidden bg-card rounded-none sm:rounded-xl m-0 sm:m-4 md:m-8 h-full">
-            <header className="p-4 sm:p-6 border-b flex items-center justify-between">
-              <div>
-                <h1 className="text-3xl sm:text-4xl font-bold text-gradient-primary-accent-secondary">
-                  MusicSync
-                </h1>
-                <p className="text-muted-foreground text-sm sm:text-base mt-1">Craft your unique sound sequences.</p>
-              </div>
-              <SidebarTrigger className="md:hidden text-foreground" />
-            </header>
+        <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-4 sm:space-y-6 overflow-hidden">
+          <ControlsComponent
+            isPlaying={isPlaying}
+            isLooping={isLooping}
+            outputMode={outputMode}
+            masterVolume={masterVolume}
+            onPlay={handlePlay}
+            onStop={handleStop}
+            onAddBlock={handleAddBlock}
+            onAddSilenceBlock={handleAddSilenceBlock}
+            onToggleLoop={handleToggleLoop}
+            onToggleOutputMode={handleToggleOutputMode}
+            onMasterVolumeChange={handleMasterVolumeChange}
+            canPlay={channels.some(ch => ch.audioBlocks.length > 0)}
+            disableAddBlock={!selectedChannelId}
+          />
 
-            <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-4 sm:space-y-6 overflow-y-auto">
-              <ControlsComponent
-                isPlaying={isPlaying}
-                isLooping={isLooping}
-                outputMode={outputMode}
-                masterVolume={masterVolume}
-                onPlay={handlePlay}
-                onStop={handleStop}
-                onAddBlock={handleAddBlock}
-                onAddSilenceBlock={handleAddSilenceBlock}
-                onToggleLoop={handleToggleLoop}
-                onToggleOutputMode={handleToggleOutputMode}
-                onMasterVolumeChange={handleMasterVolumeChange}
-                canPlay={audioBlocks.length > 0}
-              />
-
-              <div className="flex flex-col md:flex-row flex-grow space-y-4 md:space-y-0 md:space-x-6">
-                <TimelineComponent
-                  className="flex-grow md:w-2/3"
-                  blocks={audioBlocks}
-                  selectedBlockId={selectedBlockId}
+          <div className="flex flex-col md:flex-row flex-grow space-y-4 md:space-y-0 md:space-x-6 overflow-hidden">
+            <div className="flex-grow md:w-2/3 flex flex-col space-y-2 overflow-y-auto pr-2 relative">
+              {channels.map(channel => (
+                <ChannelViewComponent
+                  key={channel.id}
+                  channel={channel}
+                  isSelected={channel.id === selectedChannelId}
+                  selectedBlockId={channel.id === selectedChannelId ? selectedBlockId : null}
+                  onSelectChannel={handleSelectChannel}
+                  onUpdateChannel={handleUpdateChannel}
                   onSelectBlock={handleSelectBlock}
+                  pixelsPerSecond={PIXELS_PER_SECOND}
                   currentPlayTime={currentPlayTime}
                   isPlaying={isPlaying}
-                  pixelsPerSecond={PIXELS_PER_SECOND}
                 />
-                <PropertyPanelComponent
-                  className="w-full md:w-1/3 md:max-w-sm"
-                  selectedBlock={selectedBlock}
-                  onUpdateBlock={handleUpdateBlock}
-                  onDeleteBlock={handleDeleteBlock}
-                  pixelsPerSecond={PIXELS_PER_SECOND}
+              ))}
+              <Button onClick={handleAddChannel} variant="outline" className="mt-4 w-full">
+                <PlusIcon className="mr-2 h-5 w-5" /> Add Channel
+              </Button>
+              {channels.length > 0 && (
+                <PlaybackIndicatorComponent
+                  position={currentPlayTime * PIXELS_PER_SECOND}
+                  isVisible={isPlaying}
+                  containerHeight={channels.length * 144} // Approximate height per channel row + spacing
                 />
-              </div>
+              )}
             </div>
-          </Card>
+            
+            <PropertyPanelComponent
+              className="w-full md:w-1/3 md:max-w-sm"
+              selectedBlock={selectedBlock} // Pass the actual selected block object
+              onUpdateBlock={handleUpdateBlock}
+              onDeleteBlock={handleDeleteBlock}
+              pixelsPerSecond={PIXELS_PER_SECOND}
+              key={selectedBlock?.id} // Re-render if selected block changes
+            />
+          </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </Card>
+    </div>
   );
 }
 

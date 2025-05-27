@@ -4,7 +4,7 @@ export type WaveformType = 'sine' | 'triangle' | 'square' | 'sawtooth';
 interface BaseBlock {
   id: string;
   duration: number;  // seconds
-  startTime: number; // seconds from start of timeline
+  startTime: number; // seconds from start of timeline (within its channel)
 }
 
 export interface AudibleAudioBlock extends BaseBlock {
@@ -23,3 +23,11 @@ export interface SilentAudioBlock extends BaseBlock {
 
 export type AudioBlock = AudibleAudioBlock | SilentAudioBlock;
 
+export interface Channel {
+  id: string;
+  name: string;
+  volume: number; // 0.0 to 1.0
+  isMuted: boolean;
+  audioBlocks: AudioBlock[];
+  // Future: pan, effects, etc.
+}

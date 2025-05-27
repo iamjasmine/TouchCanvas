@@ -16,12 +16,13 @@ interface ControlsComponentProps {
   masterVolume: number; // 0 to 1
   onPlay: () => void;
   onStop: () => void;
-  onAddBlock: () => void;
-  onAddSilenceBlock: () => void;
+  onAddBlock: () => void; // Will add to selected channel
+  onAddSilenceBlock: () => void; // Will add to selected channel
   onToggleLoop: () => void;
   onToggleOutputMode: () => void;
   onMasterVolumeChange: (volume: number) => void;
   canPlay: boolean;
+  disableAddBlock: boolean; // True if no channel is selected
 }
 
 export const ControlsComponent: React.FC<ControlsComponentProps> = ({
@@ -37,15 +38,16 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   onToggleOutputMode,
   onMasterVolumeChange,
   canPlay,
+  disableAddBlock,
 }) => {
   return (
-    <Card className="p-4 bg-muted rounded-lg shadow">
+    <Card className="p-4 bg-muted/80 rounded-lg shadow">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <Button onClick={onAddBlock} variant="outline" className="transition-transform hover:scale-105">
+        <Button onClick={onAddBlock} variant="outline" className="transition-transform hover:scale-105" disabled={disableAddBlock} title={disableAddBlock ? "Select a channel first" : "Add Audio Block"}>
           <PlusIcon className="mr-2 h-5 w-5" />
-          Add Audio Block
+          Add Audio
         </Button>
-        <Button onClick={onAddSilenceBlock} variant="outline" className="transition-transform hover:scale-105">
+        <Button onClick={onAddSilenceBlock} variant="outline" className="transition-transform hover:scale-105" disabled={disableAddBlock} title={disableAddBlock ? "Select a channel first" : "Add Silence Block"}>
           <MicOffIcon className="mr-2 h-5 w-5" />
           Add Silence
         </Button>
@@ -113,4 +115,3 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
     </Card>
   );
 };
-

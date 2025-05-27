@@ -9,15 +9,15 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { MicOffIcon, Trash2Icon } from 'lucide-react';
+import { MicOffIcon, Trash2Icon, Music2Icon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface PropertyPanelComponentProps {
-  selectedBlock: AudioBlock | null;
-  onUpdateBlock: (updatedBlock: AudioBlock) => void;
-  onDeleteBlock: (blockId: string) => void;
+  selectedBlock: AudioBlock | null; // Block itself
+  onUpdateBlock: (updatedBlock: AudioBlock) => void; // ChannelId and BlockId handled by parent
+  onDeleteBlock: (blockId: string) => void; // ChannelId handled by parent
   className?: string;
-  pixelsPerSecond: number; // Added for ADSR context if needed, though not directly used here
+  pixelsPerSecond: number;
 }
 
 const waveformOptions: WaveformType[] = ['sine', 'triangle', 'square', 'sawtooth'];
@@ -33,13 +33,14 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
 }) => {
   if (!selectedBlock) {
     return (
-      <Card className={cn("p-6 flex flex-col items-center justify-center text-center bg-muted/30 shadow-lg transition-all duration-300 ease-in-out", className)}>
+      <Card className={cn("p-6 flex flex-col items-center justify-center text-center bg-muted/30 shadow-lg transition-all duration-300 ease-in-out min-h-[400px]", className)}>
         <CardHeader>
-          <CardTitle className="text-xl text-foreground/80">No Block Selected</CardTitle>
+          <Music2Icon className="h-16 w-16 text-primary mx-auto mb-4" />
+          <CardTitle className="text-xl text-foreground/80">Block Properties</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Click on a block in the timeline to see its properties.</p>
-          <img src="https://placehold.co/200x150.png?text=Select+a+Block" alt="Placeholder for property panel" data-ai-hint="music interface" className="mt-4 rounded-md opacity-70"/>
+          <p className="text-sm text-muted-foreground">Select an audio block from a channel's timeline to view and edit its properties here.</p>
+          <img src="https://placehold.co/200x150.png?text=Select+Block" alt="Placeholder for property panel" data-ai-hint="music interface abstract" className="mt-4 rounded-md opacity-50"/>
         </CardContent>
       </Card>
     );
@@ -54,8 +55,8 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
   if (selectedBlock.isSilent) {
     const silentBlock = selectedBlock as SilentAudioBlock;
     return (
-      <Card className={cn("p-1 bg-gradient-to-br from-slate-500/10 via-slate-400/10 to-slate-300/10 shadow-xl transition-all duration-300 ease-in-out", className)}>
-        <CardContent className="p-5 bg-card rounded-md">
+      <Card className={cn("p-1 bg-gradient-to-br from-slate-500/10 via-slate-400/10 to-slate-300/10 shadow-xl transition-all duration-300 ease-in-out min-h-[400px]", className)}>
+        <CardContent className="p-5 bg-card rounded-md h-full flex flex-col">
           <CardHeader className="p-0 mb-4">
             <CardTitle className="text-2xl font-semibold text-gradient-primary-accent-secondary flex items-center">
               <MicOffIcon className="mr-2 h-6 w-6" /> Silent Block
@@ -63,7 +64,7 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
             <CardDescription className="text-sm">Adjust the duration of this silence.</CardDescription>
           </CardHeader>
           
-          <div className="space-y-6">
+          <div className="space-y-6 flex-grow">
             <div>
               <Label htmlFor="duration-silent" className="text-sm font-medium">Duration ({silentBlock.duration.toFixed(1)} s)</Label>
                <Slider
@@ -76,10 +77,10 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
                 className="mt-2"
               />
             </div>
-            <Button onClick={handleDelete} variant="destructive" className="w-full mt-4">
-              <Trash2Icon className="mr-2 h-4 w-4" /> Delete Block
-            </Button>
           </div>
+          <Button onClick={handleDelete} variant="destructive" className="w-full mt-auto">
+            <Trash2Icon className="mr-2 h-4 w-4" /> Delete Block
+          </Button>
         </CardContent>
       </Card>
     );
@@ -108,8 +109,8 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
   );
 
   return (
-    <Card className={cn("p-1 bg-gradient-to-br from-accent/10 via-secondary/10 to-primary/10 shadow-xl transition-all duration-300 ease-in-out", className)}>
-      <CardContent className="p-5 bg-card rounded-md">
+    <Card className={cn("p-1 bg-gradient-to-br from-accent/10 via-secondary/10 to-primary/10 shadow-xl transition-all duration-300 ease-in-out min-h-[400px]", className)}>
+      <CardContent className="p-5 bg-card rounded-md h-full flex flex-col">
         <CardHeader className="p-0 mb-4">
           <CardTitle className="text-2xl font-semibold text-gradient-primary-accent-secondary">
             Audio Block Properties
@@ -117,7 +118,7 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
           <CardDescription className="text-sm">Adjust the selected audio block.</CardDescription>
         </CardHeader>
         
-        <div className="space-y-6">
+        <div className="space-y-5 flex-grow overflow-y-auto pr-2"> {/* Added overflow and padding */}
           <div>
             <Label htmlFor="waveform" className="text-sm font-medium">Waveform</Label>
             <Select
@@ -155,7 +156,7 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
              <Slider
               id="duration-audible"
               min={0.1}
-              max={10} // Increased max duration
+              max={10} 
               step={0.01}
               value={[audibleBlock.duration]}
               onValueChange={(value) => handleAudibleSliderChange('duration', value)}
@@ -163,73 +164,62 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
             />
           </div>
 
-          {/* ADSR Controls */}
           <div className="space-y-1 pt-2 border-t mt-4">
             <h4 className="text-sm font-medium text-muted-foreground mb-2">Envelope (ADSR)</h4>
-            {/* Attack */}
             <div>
               {adsrTooltip("Fade In (Attack)", "Time for sound to reach full volume.", 
-                <Label htmlFor="attack" className="text-sm font-medium flex items-center">
-                  <span className="mr-1">↗️</span>Fade In ({formatSeconds(audibleBlock.attack)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.attack / audibleBlock.duration) : 'N/A'})
+                <Label htmlFor="attack" className="text-xs font-medium flex items-center">
+                  <span className="mr-1 text-base">↗️</span>Fade In ({formatSeconds(audibleBlock.attack)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.attack / audibleBlock.duration) : 'N/A'})
                 </Label>
               )}
               <Slider
                 id="attack" min={0} max={audibleBlock.duration} step={0.01}
                 value={[audibleBlock.attack]}
-                onValueChange={(value) => handleAudibleSliderChange('attack', value)}
-                className="mt-1"
+                onValueChange={(value) => handleAudibleSliderChange('attack', value)} className="mt-1"
               />
             </div>
-            {/* Decay */}
             <div>
               {adsrTooltip("Volume Drop (Decay)", "Time for sound to drop to sustain level.",
-                <Label htmlFor="decay" className="text-sm font-medium flex items-center">
-                  <span className="mr-1">↘️</span>Volume Drop ({formatSeconds(audibleBlock.decay)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.decay / audibleBlock.duration) : 'N/A'})
+                <Label htmlFor="decay" className="text-xs font-medium flex items-center">
+                  <span className="mr-1 text-base">↘️</span>Volume Drop ({formatSeconds(audibleBlock.decay)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.decay / audibleBlock.duration) : 'N/A'})
                 </Label>
               )}
               <Slider
                 id="decay" min={0} max={audibleBlock.duration} step={0.01}
                 value={[audibleBlock.decay]}
-                onValueChange={(value) => handleAudibleSliderChange('decay', value)}
-                className="mt-1"
+                onValueChange={(value) => handleAudibleSliderChange('decay', value)} className="mt-1"
               />
             </div>
-            {/* Sustain */}
             <div>
               {adsrTooltip("Hold Level (Sustain)", "Volume level while the sound is held.",
-                <Label htmlFor="sustainLevel" className="text-sm font-medium flex items-center">
-                  <span className="mr-1">➡️</span>Hold Level ({formatPercentage(audibleBlock.sustainLevel)})
+                <Label htmlFor="sustainLevel" className="text-xs font-medium flex items-center">
+                  <span className="mr-1 text-base">➡️</span>Hold Level ({formatPercentage(audibleBlock.sustainLevel)})
                 </Label>
               )}
               <Slider
                 id="sustainLevel" min={0} max={1} step={0.01}
                 value={[audibleBlock.sustainLevel]}
-                onValueChange={(value) => handleAudibleSliderChange('sustainLevel', value)}
-                className="mt-1"
+                onValueChange={(value) => handleAudibleSliderChange('sustainLevel', value)} className="mt-1"
               />
             </div>
-            {/* Release */}
             <div>
               {adsrTooltip("Fade Out (Release)", "Time for sound to fade to silence at the end.",
-                <Label htmlFor="release" className="text-sm font-medium flex items-center">
-                  <span className="mr-1">↘️</span>Fade Out ({formatSeconds(audibleBlock.release)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.release / audibleBlock.duration) : 'N/A'})
+                <Label htmlFor="release" className="text-xs font-medium flex items-center">
+                  <span className="mr-1 text-base">↘️</span>Fade Out ({formatSeconds(audibleBlock.release)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.release / audibleBlock.duration) : 'N/A'})
                 </Label>
               )}
               <Slider
                 id="release" min={0} max={audibleBlock.duration} step={0.01}
                 value={[audibleBlock.release]}
-                onValueChange={(value) => handleAudibleSliderChange('release', value)}
-                className="mt-1"
+                onValueChange={(value) => handleAudibleSliderChange('release', value)} className="mt-1"
               />
             </div>
           </div>
-
-          <Button onClick={handleDelete} variant="destructive" className="w-full mt-4">
-            <Trash2Icon className="mr-2 h-4 w-4" /> Delete Block
-          </Button>
         </div>
+        <Button onClick={handleDelete} variant="destructive" className="w-full mt-auto pt-3">
+          <Trash2Icon className="mr-2 h-4 w-4" /> Delete Block
+        </Button>
       </CardContent>
     </Card>
   );
 };
-
