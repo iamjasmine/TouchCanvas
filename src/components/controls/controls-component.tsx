@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
-import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon, LayersIcon, WorkflowIcon, Volume2Icon, Loader2 } from 'lucide-react';
+import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon, LayersIcon, WorkflowIcon, Volume2Icon, Loader2, BeakerIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
 interface ControlsComponentProps {
@@ -17,13 +17,14 @@ interface ControlsComponentProps {
   masterVolume: number; // 0 to 1
   onPlay: () => void;
   onStop: () => void;
-  onAddBlock: () => void; // Will add to selected channel
-  onAddSilenceBlock: () => void; // Will add to selected channel
+  onAddBlock: () => void; 
+  onAddSilenceBlock: () => void; 
   onToggleLoop: () => void;
   onToggleOutputMode: () => void;
   onMasterVolumeChange: (volume: number) => void;
+  onTestAudio: () => void; // New prop for test audio
   canPlay: boolean;
-  disableAddBlock: boolean; // True if no channel is selected
+  disableAddBlock: boolean; 
 }
 
 export const ControlsComponent: React.FC<ControlsComponentProps> = ({
@@ -39,6 +40,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   onToggleLoop,
   onToggleOutputMode,
   onMasterVolumeChange,
+  onTestAudio, // Destructure new prop
   canPlay,
   disableAddBlock,
 }) => {
@@ -99,6 +101,16 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           <RepeatIcon className="mr-2 h-5 w-5" />
           {isLooping ? "Looping" : "Loop"}
         </Button>
+         <Button
+          onClick={onTestAudio}
+          variant="outline"
+          className="transition-transform hover:scale-105"
+          title="Test Basic Audio Output"
+          disabled={isActivatingAudio}
+        >
+          {isActivatingAudio ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <BeakerIcon className="mr-2 h-5 w-5" />}
+          Test Audio
+        </Button>
         
         <div className="flex items-center space-x-2 p-2 rounded-md border border-input bg-background transition-transform hover:scale-105">
           {outputMode === 'mixed' ? <LayersIcon className="h-5 w-5 text-primary" /> : <WorkflowIcon className="h-5 w-5 text-accent" />}
@@ -137,5 +149,3 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
     </Card>
   );
 };
-
-    
