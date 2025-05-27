@@ -256,10 +256,7 @@ export default function MusicSyncPage() {
         volume: -6, // Base volume, ADSR will shape it further
       }).start(audibleBlock.startTime); // Start oscillator at block's start time
 
-      // Stop oscillator slightly after block's visual duration to allow release phase to complete if needed
-      // Tone.js handles disposal of gain-wrapped oscs well, so direct stop might not be necessary if gain goes to 0.
-      // Let's rely on gain envelope completely shaping the sound. Osc needs to run for its duration.
-      osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); // Ensure it plays long enough for release tail
+      osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); 
 
 
       const gainEnv = new Tone.Gain(0).toDestination();
@@ -270,45 +267,31 @@ export default function MusicSyncPage() {
       
       const attackEndTime = startTime + attack;
       const decayEndTime = attackEndTime + decay;
-      // Release phase starts relative to the end of the block's duration
       const releaseStartTime = startTime + duration - release; 
       const effectiveEndTime = startTime + duration;
 
-      // Ensure chronological order for ramps
-      // gainEnv.gain.cancelScheduledValues(startTime); // Clear previous ramps if any
       gainEnv.gain.setValueAtTime(0, startTime);
-      gainEnv.gain.linearRampToValueAtTime(1, attackEndTime); // Peak of attack (full volume for the gain node)
+      gainEnv.gain.linearRampToValueAtTime(1, attackEndTime); 
       
-      // Sustain phase starts after decay. If release starts before decay finishes, decay ramp is shortened.
       const sustainPhaseStartTime = decayEndTime;
       const sustainPhaseEndTime = releaseStartTime;
 
-      if (sustainPhaseStartTime < sustainPhaseEndTime) { // Normal ADSR order
-        gainEnv.gain.linearRampToValueAtTime(sustainLevel, sustainPhaseStartTime); // Ramp to sustain level
-        // Hold sustain level until release phase
-        if (sustainPhaseEndTime > sustainPhaseStartTime) { // If there's a sustain period
+      if (sustainPhaseStartTime < sustainPhaseEndTime) { 
+        gainEnv.gain.linearRampToValueAtTime(sustainLevel, sustainPhaseStartTime); 
+        if (sustainPhaseEndTime > sustainPhaseStartTime) { 
              gainEnv.gain.setValueAtTime(sustainLevel, sustainPhaseEndTime);
         }
-        gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime); // Ramp to 0 at the end of the block
-      } else { // Release starts during or before decay finishes (short block or long A/D)
-        // Ramp directly to where sustain *would* be at releaseStartTime, or an intermediate value
-        // then ramp to 0. This case is complex if A+D > D-R.
-        // adjustADSR should prevent A+D+R > D.
-        // If D-R < A+D, sustain phase is zero or negative.
-        // This means release starts effectively truncating decay or attack.
-        // Ramp to sustainLevel at decayEndTime (or earlier if release cuts it)
+        gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime); 
+      } else { 
         const actualDecayOrTransitionTime = Math.min(decayEndTime, releaseStartTime);
         gainEnv.gain.linearRampToValueAtTime(sustainLevel, actualDecayOrTransitionTime);
-        // Then ramp from whatever value it is at releaseStartTime to 0 by effectiveEndTime
-        // If releaseStartTime < actualDecayOrTransitionTime, this means release starts even before decay would hit sustain.
-        // The setValueAtTime(sustainLevel, releaseStartTime) might be needed if sustainPhaseEndTime is before sustainPhaseStartTime
         if (releaseStartTime >= startTime && releaseStartTime < effectiveEndTime) {
              const valueAtReleaseStart = gainEnv.gain.getValueAtTime(releaseStartTime);
-             gainEnv.gain.setValueAtTime(valueAtReleaseStart, releaseStartTime); // Hold briefly if needed
+             gainEnv.gain.setValueAtTime(valueAtReleaseStart, releaseStartTime); 
              gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime);
-        } else if (releaseStartTime >= effectiveEndTime) { // release is zero or effectively after block end
-             gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime); // Fade out by block end
-        } else { // fallback for very short blocks
+        } else if (releaseStartTime >= effectiveEndTime) { 
+             gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime); 
+        } else { 
              gainEnv.gain.linearRampToValueAtTime(0, effectiveEndTime);
         }
       }
@@ -324,12 +307,14 @@ export default function MusicSyncPage() {
       Tone.Transport.loop = false;
       Tone.Transport.scheduleOnce(() => {
         setIsPlaying(false);
+        setCurrentPlayTime(0); // Reset visual playhead
+        Tone.Transport.position = 0; // Reset Tone's internal clock
       }, totalDuration + 0.01); 
     }
 
     Tone.Transport.start();
     setIsPlaying(true);
-  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping]);
+  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping, setCurrentPlayTime]);
 
 
   const handleStop = useCallback(() => {
@@ -356,9 +341,11 @@ export default function MusicSyncPage() {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
       }
-      if (Tone.Transport.seconds !== 0) {
-         setCurrentPlayTime(Tone.Transport.seconds);
-      }
+      // When isPlaying becomes false, if currentPlayTime is not already 0 (e.g. natural stop),
+      // and Tone.Transport.seconds is also not 0 (it would be totalDuration),
+      // this ensures the playhead reflects the final position or the reset position.
+      // If handleStop set it to 0, or scheduleOnce set it to 0, this will be a no-op or confirm 0.
+      setCurrentPlayTime(Tone.Transport.seconds);
     }
     return () => {
       if (animationFrameId.current) {
@@ -424,3 +411,4 @@ export default function MusicSyncPage() {
     </div>
   );
 }
+
