@@ -132,7 +132,7 @@ export default function MusicSyncPage() {
         console.log('[MusicSyncPage] MasterVolumeNode created and connected to destination. Initial volume (dB):', masterVolumeNodeRef.current.volume.value, 'Node details:', masterVolumeNodeRef.current);
       }
     }
-  }, [audioContextStarted, masterVolume]); // masterVolume is in deps to set initial volume if context starts later
+  }, [audioContextStarted, masterVolume]); 
 
   useEffect(() => {
     if (masterVolumeNodeRef.current && audioContextStarted) {
@@ -151,13 +151,12 @@ export default function MusicSyncPage() {
     setIsActivatingAudio(true);
     console.log('[MusicSyncPage] ensureAudioIsActive: Set isActivatingAudio to true. Attempting to activate audio...');
     try {
-      await activateAudio(); // This calls startAudioContext from ToneProvider
+      await activateAudio(); 
       if (Tone.context.state === 'running') {
         console.log('[MusicSyncPage] ensureAudioIsActive: activateAudio() successful. Tone.context.state:', Tone.context.state);
         return true;
       } else {
         console.warn('[MusicSyncPage] ensureAudioIsActive: activateAudio() did not result in "running" state. Current state:', Tone.context.state);
-        // Making a direct attempt if provider's call didn't suffice or context got suspended again
         console.log('[MusicSyncPage] ensureAudioIsActive: Making a direct Tone.start() attempt.');
         await Tone.start();
         if (Tone.context.state === 'running') {
@@ -201,7 +200,6 @@ export default function MusicSyncPage() {
       toast({ title: "Audio Test Failed", description: String(error), variant: "destructive" });
     }
   };
-
 
   const handleMasterVolumeChange = useCallback((newVolume: number) => {
     setMasterVolume(Math.max(0, Math.min(1, newVolume))); 
@@ -425,6 +423,14 @@ export default function MusicSyncPage() {
     Tone.Transport.stop(); 
     Tone.Transport.cancel(); 
     Tone.Transport.position = 0; 
+    Tone.Transport.loop = false; // Ensure loop is reset before new scheduling
+
+    console.log("--- Transport State Before Scheduling ---");
+    console.log("Tone.now():", Tone.now());
+    console.log("Tone.Transport.seconds (after reset):", Tone.Transport.seconds);
+    console.log("Tone.Transport.position (after reset):", Tone.Transport.position);
+    console.log("Tone.Transport.state (after reset):", Tone.Transport.state);
+
 
     console.log('[MusicSyncPage] handlePlay: Disposing old audio nodes.');
     activeAudioNodesMap.current.forEach(channelNodes => {
@@ -444,6 +450,7 @@ export default function MusicSyncPage() {
         return;
       }
       console.log(`[MusicSyncPage] handlePlay: Processing channel ${channel.name} (ID: ${channel.id}). Number of audio blocks: ${channel.audioBlocks.length}`);
+      console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name} blocks:`, JSON.parse(JSON.stringify(channel.audioBlocks)));
       
       const channelSpecificNodes: ActiveChannelAudioNodes[] = [];
       const channelVolDb = (channel.volume > 0.001 && !channel.isMuted) ? Tone.gainToDb(channel.volume) : -Infinity;
@@ -453,13 +460,12 @@ export default function MusicSyncPage() {
 
       if (!masterVolumeNodeRef.current) {
           console.error(`[MusicSyncPage] handlePlay: CRITICAL ERROR for channel ${channel.name} - masterVolumeNodeRef.current is null before connecting ChannelVolumeNode.`);
-          return; // Skip this channel if master isn't ready
+          return; 
       }
       
       console.log(`[MusicSyncPage] handlePlay: Connecting ChannelVolumeNode for ${channel.name} to MasterVolumeNode.`);
       channelVolumeNode.connect(masterVolumeNodeRef.current);
-      console.log(`[MusicSyncPage] handlePlay: MasterVolumeNode outputs: ${masterVolumeNodeRef.current.numberOfOutputs}, MasterVolumeNode inputs: ${masterVolumeNodeRef.current.numberOfInputs}`);
-      console.log("[MusicSyncPage] MasterVolumeNode (after channel connect) details:", masterVolumeNodeRef.current);
+      console.log(`[MusicSyncPage] handlePlay: MasterVolumeNode (after channel ${channel.name} connect) outputs: ${masterVolumeNodeRef.current.numberOfOutputs}, MasterVolumeNode inputs: ${masterVolumeNodeRef.current.numberOfInputs}. MasterVolumeNode details:`, masterVolumeNodeRef.current);
       
       channel.audioBlocks.forEach(block => {
         if (block.isSilent) {
@@ -478,10 +484,9 @@ export default function MusicSyncPage() {
         if (audibleBlock.frequency <=0) {
              console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} has frequency <= 0 (${audibleBlock.frequency}Hz). This will likely not produce sound.`);
         }
-        if (audibleBlock.frequency < 40) {
+        if (audibleBlock.frequency < 40 && audibleBlock.frequency > 0) {
              console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} in channel ${channel.name} has a very low frequency (${audibleBlock.frequency}Hz) which may be inaudible or rumble-like.`);
         }
-
 
         const osc = new Tone.Oscillator({
           type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6, 
@@ -497,7 +502,7 @@ export default function MusicSyncPage() {
         const releaseStartTime = startTime + duration - release; 
         const effectiveEndTime = startTime + duration;
 
-        console.log(`[MusicSyncPage] handlePlay: SCHEDULING ADSR for block ${audibleBlock.id}: StartTime=${startTime.toFixed(3)}, Duration=${duration.toFixed(3)}, AttackTime=${attack.toFixed(3)} (ends @${attackEndTime.toFixed(3)}), DecayTime=${decay.toFixed(3)} (ends @${decayEndTime.toFixed(3)}), SustainLevel=${sustainLevel.toFixed(2)}, ReleaseTime=${release.toFixed(3)} (starts @${releaseStartTime.toFixed(3)}, ends @${effectiveEndTime.toFixed(3)})`);
+        console.log(`[MusicSyncPage] handlePlay: SCHEDULING ADSR for block ${audibleBlock.id}: RelStartTime=${startTime.toFixed(3)}, RelDuration=${duration.toFixed(3)}, AttackTime=${attack.toFixed(3)} (ends @ rel ${attackEndTime.toFixed(3)}), DecayTime=${decay.toFixed(3)} (ends @ rel ${decayEndTime.toFixed(3)}), SustainLevel=${sustainLevel.toFixed(2)}, ReleaseTime=${release.toFixed(3)} (starts @ rel ${releaseStartTime.toFixed(3)}, ends @ rel ${effectiveEndTime.toFixed(3)})`);
 
         adsrGain.gain.setValueAtTime(0, startTime); 
         
@@ -523,9 +528,9 @@ export default function MusicSyncPage() {
             adsrGain.gain.setValueAtTime(0, effectiveEndTime); 
         }
         
-        console.log(`[MusicSyncPage] handlePlay: Oscillator for block ${audibleBlock.id} scheduled: osc.start(${startTime.toFixed(3)}), osc.stop(${(effectiveEndTime + 0.1).toFixed(3)})`);
+        console.log(`[MusicSyncPage] handlePlay: Oscillator for block ${audibleBlock.id} scheduled: osc.start(transportTime: ${startTime.toFixed(3)}), osc.stop(transportTime: ${(effectiveEndTime).toFixed(3)}) (stop offset by +0.1 internally in Tone.js for ramps)`);
         osc.start(startTime);
-        osc.stop(effectiveEndTime + 0.1); 
+        osc.stop(effectiveEndTime); 
 
         channelSpecificNodes.push({ osc, adsrGain, channelVolumeNode });
       });
@@ -539,11 +544,16 @@ export default function MusicSyncPage() {
 
     const longestChannelDuration = Math.max(0, ...channels.map(ch => ch.audioBlocks.reduce((sum, b) => sum + b.duration, 0)));
     console.log(`[MusicSyncPage] handlePlay: Longest channel duration: ${longestChannelDuration}s. isLooping: ${isLooping}`);
+    
+    console.log("--- Transport State After Scheduling, Before Start ---");
+    console.log("Tone.Transport.seconds:", Tone.Transport.seconds);
+    console.log("Tone.Transport.position:", Tone.Transport.position);
+    console.log("Tone.Transport.state:", Tone.Transport.state);
 
     if (longestChannelDuration === 0 && !isLooping) {
         console.log('[MusicSyncPage] handlePlay: No duration and not looping, stopping playback state.');
         setIsPlaying(false);
-        setCurrentPlayTime(0);
+        setCurrentPlayTime(0); 
         Tone.Transport.position = 0;
         return; 
     }
@@ -561,8 +571,8 @@ export default function MusicSyncPage() {
           setIsPlaying(false);
           setCurrentPlayTime(0); 
           Tone.Transport.position = 0; 
-        }, longestChannelDuration + 0.2); 
-         console.log(`[MusicSyncPage] handlePlay: Scheduled stop for non-looping playback at ${longestChannelDuration + 0.2}s.`);
+        }, longestChannelDuration + 0.2); // Small buffer after the last block
+         console.log(`[MusicSyncPage] handlePlay: Scheduled stop for non-looping playback at transport time ${longestChannelDuration + 0.2}s.`);
       }
     }
 
