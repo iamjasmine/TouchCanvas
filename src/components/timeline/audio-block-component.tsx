@@ -10,9 +10,10 @@ import { Waves, Activity, Square, TrendingUp, MicOffIcon } from 'lucide-react';
 interface AudioBlockComponentProps {
   block: AudioBlock;
   isSelected: boolean;
-  onClick: (event: React.MouseEvent) => void; // Added event to allow stopPropagation
+  onClick: (event: React.MouseEvent) => void; 
   pixelsPerSecond: number;
-  heightInRem?: number; // Optional height in rem, e.g., h-24 would be 6
+  heightInRem?: number; 
+  className?: string; // Added className prop
 }
 
 const waveformIcons: Record<WaveformType, React.ElementType> = {
@@ -31,7 +32,7 @@ const waveformColors: Record<WaveformType, string> = {
 
 const silentBlockColor = 'from-slate-300 to-slate-500';
 
-const ADSR_VISUAL_HEIGHT = 20; // Reduced for smaller block height
+const ADSR_VISUAL_HEIGHT = 20; 
 
 const AdsrVisualizer: React.FC<{ block: AudibleAudioBlock; widthInPixels: number }> = ({ block, widthInPixels }) => {
   const { duration, attack, decay, sustainLevel, release } = block;
@@ -76,20 +77,22 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
   isSelected,
   onClick,
   pixelsPerSecond,
-  heightInRem = 7, // Default to h-28 (7 * 4 = 28)
+  heightInRem = 7, 
+  className,
 }) => {
   const width = block.duration * pixelsPerSecond;
-  const heightClass = `h-${heightInRem * 4}`; // e.g., h-24 for heightInRem=6
+  const heightClass = `h-${heightInRem * 4}`; 
 
   if (block.isSilent) {
     const silentBlock = block as SilentAudioBlock;
     return (
       <Card
         className={cn(
-          heightClass, // Dynamic height
+          heightClass, 
           'flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group',
           isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
-          `bg-gradient-to-br ${silentBlockColor} text-white`
+          `bg-gradient-to-br ${silentBlockColor} text-white`,
+          className
         )}
         style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px` }}
         onClick={onClick}
@@ -118,10 +121,11 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
   return (
     <Card
       className={cn(
-        heightClass, // Dynamic height
+        heightClass, 
         'flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group overflow-hidden',
         isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
-        `bg-gradient-to-br ${gradientClass} text-white`
+        `bg-gradient-to-br ${gradientClass} text-white`,
+        className
       )}
       style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px` }}
       onClick={onClick}

@@ -13,7 +13,13 @@ import { PlaybackIndicatorComponent } from '@/components/timeline/playback-indic
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { PlusIcon, ListMusicIcon } from 'lucide-react';
+import { PlusIcon, ListMusicIcon, PlayCircleIcon, InfoIcon } from 'lucide-react';
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert"
+
 
 const PIXELS_PER_SECOND = 60;
 const MIN_SUSTAIN_TIME = 0.05; // Minimum duration for the sustain phase
@@ -186,8 +192,16 @@ export default function MusicSyncPage() {
 
 
   const handleAddBlock = useCallback(async () => {
-    if (Tone.context.state !== 'running') {
-        await startAudioContext();
+    if (!audioContextStarted) {
+      toast({ title: "Audio Not Ready", description: "Please start the audio context first using the 'Start Audio Context' button.", variant: "default" });
+      return;
+    }
+    if (Tone.context.state !== 'running') { // Double check, even if audioContextStarted is true
+        await startAudioContext(); // Attempt to start if somehow suspended
+        if (Tone.context.state !== 'running') {
+            toast({ title: "Audio Activation Failed", description: "Could not activate audio. Please try the 'Start Audio Context' button again.", variant: "destructive" });
+            return;
+        }
     }
     if (!selectedChannelId) {
       toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
@@ -211,11 +225,19 @@ export default function MusicSyncPage() {
     }));
     setSelectedBlockId(newBlockId);
     toast({ title: "Audio Block Added", description: `Block added to ${selectedChannel?.name}.` });
-  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
+  }, [audioContextStarted, selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
 
   const handleAddSilenceBlock = useCallback(async () => {
-    if (Tone.context.state !== 'running') {
+    if (!audioContextStarted) {
+      toast({ title: "Audio Not Ready", description: "Please start the audio context first using the 'Start Audio Context' button.", variant: "default" });
+      return;
+    }
+     if (Tone.context.state !== 'running') { // Double check
         await startAudioContext();
+        if (Tone.context.state !== 'running') {
+            toast({ title: "Audio Activation Failed", description: "Could not activate audio. Please try the 'Start Audio Context' button again.", variant: "destructive" });
+            return;
+        }
     }
     if (!selectedChannelId) {
       toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
@@ -233,7 +255,7 @@ export default function MusicSyncPage() {
     }));
     setSelectedBlockId(newBlockId);
     toast({ title: "Silence Block Added", description: `Silence added to ${selectedChannel?.name}.` });
-  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
+  }, [audioContextStarted, selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
   
   const handleSelectBlock = useCallback((channelId: string, blockId: string) => {
     setSelectedChannelId(channelId); 
@@ -312,14 +334,14 @@ export default function MusicSyncPage() {
 
   const handlePlay = useCallback(async () => {
     if (!audioContextStarted) {
-      await startAudioContext(); 
+      toast({ title: "Audio Not Ready", description: "Please start the audio context first using the 'Start Audio Context' button.", variant: "default" });
+      return;
     }
-
     if (Tone.context.state !== 'running') {
       try {
-        await Tone.start(); 
+        await startAudioContext(); // Attempt to start again
         if (Tone.context.state !== 'running') { 
-          toast({ title: "Audio Context Error", description: "Could not activate audio. Please try again.", variant: "destructive" });
+          toast({ title: "Audio Context Error", description: "Could not activate audio. Please try the 'Start Audio Context' button again.", variant: "destructive" });
           return;
         }
       } catch (e) {
@@ -497,7 +519,26 @@ export default function MusicSyncPage() {
         </header>
 
         <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-4 sm:space-y-6 overflow-hidden">
+          {!audioContextStarted && (
+             <Alert variant="default" className="bg-primary/10 border-primary/30">
+              <InfoIcon className="h-5 w-5 text-primary" />
+              <AlertTitle className="font-semibold text-primary">Audio Context Not Started</AlertTitle>
+              <AlertDescription className="text-primary/80">
+                Click the button below to enable audio playback in your browser. 
+                This is required to hear sounds from the application.
+              </AlertDescription>
+              <Button 
+                onClick={startAudioContext} 
+                className="mt-3 bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                <PlayCircleIcon className="mr-2 h-5 w-5" />
+                Start Audio Context
+              </Button>
+            </Alert>
+          )}
+
           <ControlsComponent
+            isAudioReady={audioContextStarted}
             isPlaying={isPlaying}
             isLooping={isLooping}
             outputMode={outputMode}
@@ -527,9 +568,10 @@ export default function MusicSyncPage() {
                   pixelsPerSecond={PIXELS_PER_SECOND}
                   currentPlayTime={currentPlayTime} 
                   isPlaying={isPlaying} 
+                  isAudioReady={audioContextStarted}
                 />
               ))}
-              <Button onClick={handleAddChannel} variant="outline" className="mt-4 w-full">
+              <Button onClick={handleAddChannel} variant="outline" className="mt-4 w-full" disabled={!audioContextStarted}>
                 <PlusIcon className="mr-2 h-5 w-5" /> Add Channel
               </Button>
               {channels.length > 0 && (
@@ -548,6 +590,7 @@ export default function MusicSyncPage() {
               onDeleteBlock={handleDeleteBlock}
               pixelsPerSecond={PIXELS_PER_SECOND}
               key={selectedBlock?.id} 
+              isAudioReady={audioContextStarted}
             />
           </div>
         </div>
@@ -555,5 +598,3 @@ export default function MusicSyncPage() {
     </div>
   );
 }
-
-    
