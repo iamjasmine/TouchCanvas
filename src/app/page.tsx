@@ -25,6 +25,7 @@ export default function MusicSyncPage() {
 
   const activeOscillators = useRef<Tone.Oscillator[]>([]);
   const animationFrameId = useRef<number | null>(null);
+  const isInitialMount = useRef(true);
 
   const selectedBlock = audioBlocks.find(block => block.id === selectedBlockId) || null;
 
@@ -65,14 +66,21 @@ export default function MusicSyncPage() {
     });
   }, [recalculateStartTimes]);
 
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    } else {
+      toast({
+        title: isLooping ? "Loop Enabled" : "Loop Disabled",
+        description: isLooping ? "Playback will now loop." : "Playback will not loop.",
+      });
+    }
+  }, [isLooping, toast]);
+
   const handleToggleLoop = useCallback(() => {
     setIsLooping(prev => {
       const newLoopState = !prev;
-      toast({
-        title: newLoopState ? "Loop Enabled" : "Loop Disabled",
-        description: newLoopState ? "Playback will now loop." : "Playback will not loop.",
-      });
-      // If playback is ongoing, update Tone.Transport immediately
+      // Toast logic moved to useEffect
       if (isPlaying && audioBlocks.length > 0) {
         const totalDuration = audioBlocks.reduce((sum, b) => sum + b.duration, 0);
         if (newLoopState) {
@@ -81,14 +89,11 @@ export default function MusicSyncPage() {
           Tone.Transport.loopEnd = totalDuration;
         } else {
           Tone.Transport.loop = false;
-          // If it was looping and now it's not, we might need to schedule a stop
-          // This part is complex as the playhead might be past totalDuration if it was looping
-          // For simplicity, current behavior: if loop is turned off mid-play, it continues till manually stopped or natural end if that was scheduled
         }
       }
       return newLoopState;
     });
-  }, [toast, isPlaying, audioBlocks]);
+  }, [isPlaying, audioBlocks]);
 
   const handlePlay = useCallback(async () => {
     if (!audioContextStarted) {
@@ -131,7 +136,7 @@ export default function MusicSyncPage() {
 
     Tone.Transport.start();
     setIsPlaying(true);
-  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping, recalculateStartTimes]);
+  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping]);
 
 
   const handleStop = useCallback(() => {
