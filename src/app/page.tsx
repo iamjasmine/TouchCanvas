@@ -27,43 +27,36 @@ const calculateADSRDefaults = (duration: number): Pick<AudibleAudioBlock, 'attac
 const adjustADSR = (block: AudibleAudioBlock): AudibleAudioBlock => {
   let { duration, attack, decay, sustainLevel, release } = block;
 
-  // Ensure individual components are non-negative
   attack = Math.max(0, attack);
   decay = Math.max(0, decay);
   release = Math.max(0, release);
   sustainLevel = Math.max(0, Math.min(sustainLevel, 1));
 
-  // Ensure individual ADSR times do not exceed duration
   attack = Math.min(attack, duration);
   decay = Math.min(decay, duration);
   release = Math.min(release, duration);
   
   let adrSum = attack + decay + release;
 
-  // Constraint 1: A+D+R sum must not exceed duration.
   if (adrSum > duration && duration > 0) {
     const scale = duration / adrSum;
     attack *= scale;
     decay *= scale;
     release *= scale;
-    adrSum = duration; // Update sum after scaling
+    adrSum = duration; 
   } else if (duration <= 0) {
     attack = 0; decay = 0; release = 0; adrSum = 0;
   }
 
-  // Constraint 2: Ensure minimum sustain time.
-  // Sustain time = duration - (attack + decay + release)
-  // We need: duration - adrSum >= MIN_SUSTAIN_TIME
-  // So, adrSum <= duration - MIN_SUSTAIN_TIME
   const maxAllowedAdrSum = Math.max(0, duration - MIN_SUSTAIN_TIME);
 
   if (adrSum > maxAllowedAdrSum) {
-    if (maxAllowedAdrSum > 0 && adrSum > 0) { // Check adrSum > 0 to avoid division by zero
+    if (maxAllowedAdrSum > 0 && adrSum > 0) { 
       const scale = maxAllowedAdrSum / adrSum;
       attack *= scale;
       decay *= scale;
       release *= scale;
-    } else { // Not enough room for MIN_SUSTAIN_TIME, zero out A, D, R
+    } else { 
       attack = 0;
       decay = 0;
       release = 0;
@@ -88,15 +81,46 @@ export default function MusicSyncPage() {
   const [audioBlocks, setAudioBlocks] = useState<AudioBlock[]>([]);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPlayTime, setCurrentPlayTime] = useState(0); // in seconds
+  const [currentPlayTime, setCurrentPlayTime] = useState(0); 
   const [isLooping, setIsLooping] = useState(false);
   const [outputMode, setOutputMode] = useState<'mixed' | 'independent'>('mixed');
+  const [masterVolume, setMasterVolume] = useState<number>(0.75); // 0 to 1
 
   const activeAudioNodes = useRef<{ osc: Tone.Oscillator, gainEnv?: Tone.Gain }[]>([]);
   const animationFrameId = useRef<number | null>(null);
-  const isInitialMount = useRef(true);
+  const masterVolumeNodeRef = useRef<Tone.Volume | null>(null);
+  
+  const isInitialMount = useRef({
+    looping: true,
+    outputMode: true,
+    volume: true,
+  });
 
   const selectedBlock = audioBlocks.find(block => block.id === selectedBlockId) || null;
+
+  // Initialize master volume node
+  useEffect(() => {
+    if (audioContextStarted && !masterVolumeNodeRef.current) {
+      masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
+    }
+    // Cleanup on component unmount
+    return () => {
+      masterVolumeNodeRef.current?.dispose();
+      masterVolumeNodeRef.current = null;
+    };
+  }, [audioContextStarted, masterVolume]); // Initial masterVolume is used here
+
+  // Update Tone.Volume when masterVolume state changes
+  useEffect(() => {
+    if (masterVolumeNodeRef.current) {
+      masterVolumeNodeRef.current.volume.rampTo(Tone.gainToDb(masterVolume), 0.05);
+    }
+  }, [masterVolume]);
+
+  const handleMasterVolumeChange = useCallback((newVolume: number) => {
+    setMasterVolume(Math.max(0, Math.min(1, newVolume))); // Clamp between 0 and 1
+  }, []);
+
 
   const recalculateStartTimes = useCallback((blocks: AudioBlock[]): AudioBlock[] => {
     let cumulativeTime = 0;
@@ -117,11 +141,11 @@ export default function MusicSyncPage() {
       waveform: 'sine',
       frequency: 100,
       duration: initialDuration,
-      startTime: 0, // Will be recalculated
+      startTime: 0, 
       isSilent: false,
       ...adsrDefaults,
     };
-    newBlock = adjustADSR(newBlock); // Apply constraints to defaults
+    newBlock = adjustADSR(newBlock); 
 
     setAudioBlocks(prevBlocks => {
       const updatedBlocks = [...prevBlocks, newBlock];
@@ -135,8 +159,8 @@ export default function MusicSyncPage() {
     const newBlockId = crypto.randomUUID();
     const newBlock: SilentAudioBlock = {
       id: newBlockId,
-      duration: 1, // Default duration for silence
-      startTime: 0, // Will be recalculated
+      duration: 1, 
+      startTime: 0, 
       isSilent: true,
     };
     setAudioBlocks(prevBlocks => {
@@ -155,16 +179,12 @@ export default function MusicSyncPage() {
     setAudioBlocks(prevBlocks => {
       const updatedBlocks = prevBlocks.map(b => {
         if (b.id === updatedBlockData.id) {
-          if (!updatedBlockData.isSilent && !b.isSilent) { // Audible block being updated
+          if (!updatedBlockData.isSilent && !b.isSilent) { 
             let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
             const oldAudible = b as AudibleAudioBlock;
 
-            // If duration changed, and ADSR values were not part of this specific update (heuristics)
-            // then scale ADSR proportionally.
             if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0) {
               const durationRatio = newAudible.duration / oldAudible.duration;
-              // Only scale if the incoming ADSR values are the same as the old ones,
-              // implying duration was the primary change from the UI for this update action.
               if (newAudible.attack === oldAudible.attack) {
                 newAudible.attack = oldAudible.attack * durationRatio;
               }
@@ -174,11 +194,10 @@ export default function MusicSyncPage() {
               if (newAudible.release === oldAudible.release) {
                 newAudible.release = oldAudible.release * durationRatio;
               }
-              // sustainLevel remains as is, unless also changed in updatedBlockData
             }
-            return adjustADSR(newAudible); // Apply constraints
+            return adjustADSR(newAudible); 
           }
-          return updatedBlockData; // For silent blocks or type changes
+          return updatedBlockData; 
         }
         return b;
       });
@@ -192,15 +211,14 @@ export default function MusicSyncPage() {
       const filteredBlocks = prevBlocks.filter(b => b.id !== blockIdToDelete);
       return recalculateStartTimes(filteredBlocks);
     });
-    setSelectedBlockId(null); // Deselect the block
+    setSelectedBlockId(null); 
     toast({ title: "Block Deleted", description: "The audio block has been removed.", variant: "destructive" });
   }, [recalculateStartTimes, toast]);
 
 
   useEffect(() => {
-    // Logic for isLooping toast
-    if (isInitialMount.current) {
-        // Skip toast for initial mount for isLooping
+    if (isInitialMount.current.looping) {
+        isInitialMount.current.looping = false;
     } else {
         if (toast && typeof isLooping === 'boolean') {
             toast({
@@ -212,9 +230,8 @@ export default function MusicSyncPage() {
   }, [isLooping, toast]);
 
   useEffect(() => {
-    // Logic for outputMode toast
-    if (isInitialMount.current) {
-        // Skip toast for initial mount for outputMode
+    if (isInitialMount.current.outputMode) {
+        isInitialMount.current.outputMode = false;
     } else {
       if (toast) {
         toast({
@@ -225,13 +242,18 @@ export default function MusicSyncPage() {
     }
   }, [outputMode, toast]);
 
-
-  useEffect(() => { // Combined initial mount effect
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
+  useEffect(() => {
+    if (isInitialMount.current.volume) {
+        isInitialMount.current.volume = false;
+    } else {
+        if (toast) {
+            toast({
+                title: "Master Volume Changed",
+                description: `Volume set to ${Math.round(masterVolume * 100)}%`,
+            });
+        }
     }
-  }, []);
-
+  }, [masterVolume, toast]);
 
   const handleToggleLoop = useCallback(() => {
     setIsLooping(prev => {
@@ -252,7 +274,6 @@ export default function MusicSyncPage() {
 
   const handleToggleOutputMode = useCallback(() => {
     setOutputMode(prevMode => (prevMode === 'mixed' ? 'independent' : 'mixed'));
-    // Actual audio routing changes would go here in the future
   }, []);
 
   const handlePlay = useCallback(async () => {
@@ -261,6 +282,14 @@ export default function MusicSyncPage() {
     }
     if (Tone.context.state !== 'running') {
       await Tone.start(); 
+    }
+    if (!masterVolumeNodeRef.current) { // Ensure master volume node is ready
+        if (audioContextStarted) { // Attempt to initialize if context started but node isn't there
+             masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
+        } else {
+            toast({ title: "Audio Error", description: "Master volume node not ready.", variant: "destructive"});
+            return;
+        }
     }
     if (audioBlocks.length === 0) {
       toast({ title: "Cannot Play", description: "Add some audio blocks first!", variant: "destructive" });
@@ -281,13 +310,13 @@ export default function MusicSyncPage() {
       const osc = new Tone.Oscillator({
         type: audibleBlock.waveform,
         frequency: audibleBlock.frequency,
-        volume: -6, // Base volume, ADSR will shape it further
-      }).start(audibleBlock.startTime); // Start oscillator at block's start time
+        volume: -6, 
+      }).start(audibleBlock.startTime); 
 
       osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); 
 
-
-      const gainEnv = new Tone.Gain(0).toDestination();
+      // Connect ADSR gain to master volume node
+      const gainEnv = new Tone.Gain(0).connect(masterVolumeNodeRef.current!);
       osc.connect(gainEnv);
       activeAudioNodes.current.push({ osc, gainEnv });
 
@@ -335,14 +364,14 @@ export default function MusicSyncPage() {
       Tone.Transport.loop = false;
       Tone.Transport.scheduleOnce(() => {
         setIsPlaying(false);
-        setCurrentPlayTime(0); // Reset visual playhead
-        Tone.Transport.position = 0; // Reset Tone's internal clock
+        setCurrentPlayTime(0); 
+        Tone.Transport.position = 0; 
       }, totalDuration + 0.01); 
     }
 
     Tone.Transport.start();
     setIsPlaying(true);
-  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping, setCurrentPlayTime]);
+  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping, masterVolume, setCurrentPlayTime]);
 
 
   const handleStop = useCallback(() => {
@@ -369,7 +398,7 @@ export default function MusicSyncPage() {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
       }
-      setCurrentPlayTime(Tone.Transport.seconds);
+      setCurrentPlayTime(Tone.Transport.seconds); 
     }
     return () => {
       if (animationFrameId.current) {
@@ -379,6 +408,7 @@ export default function MusicSyncPage() {
   }, [isPlaying]);
 
   useEffect(() => {
+    // General cleanup for Tone.Transport and active nodes on unmount
     return () => {
       Tone.Transport.stop();
       Tone.Transport.cancel();
@@ -387,6 +417,7 @@ export default function MusicSyncPage() {
         nodes.osc.dispose();
         nodes.gainEnv?.dispose();
       });
+      activeAudioNodes.current = [];
     };
   }, []);
 
@@ -405,12 +436,14 @@ export default function MusicSyncPage() {
             isPlaying={isPlaying}
             isLooping={isLooping}
             outputMode={outputMode}
+            masterVolume={masterVolume}
             onPlay={handlePlay}
             onStop={handleStop}
             onAddBlock={handleAddBlock}
             onAddSilenceBlock={handleAddSilenceBlock}
             onToggleLoop={handleToggleLoop}
             onToggleOutputMode={handleToggleOutputMode}
+            onMasterVolumeChange={handleMasterVolumeChange}
             canPlay={audioBlocks.length > 0}
           />
 
