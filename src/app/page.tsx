@@ -1,3 +1,4 @@
+
 "use client";
 
 import type React from 'react';
@@ -20,6 +21,7 @@ export default function MusicSyncPage() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayTime, setCurrentPlayTime] = useState(0); // in seconds
+  const [isLooping, setIsLooping] = useState(false);
 
   const activeOscillators = useRef<Tone.Oscillator[]>([]);
   const animationFrameId = useRef<number | null>(null);
@@ -63,13 +65,36 @@ export default function MusicSyncPage() {
     });
   }, [recalculateStartTimes]);
 
+  const handleToggleLoop = useCallback(() => {
+    setIsLooping(prev => {
+      const newLoopState = !prev;
+      toast({
+        title: newLoopState ? "Loop Enabled" : "Loop Disabled",
+        description: newLoopState ? "Playback will now loop." : "Playback will not loop.",
+      });
+      // If playback is ongoing, update Tone.Transport immediately
+      if (isPlaying && audioBlocks.length > 0) {
+        const totalDuration = audioBlocks.reduce((sum, b) => sum + b.duration, 0);
+        if (newLoopState) {
+          Tone.Transport.loop = true;
+          Tone.Transport.loopStart = 0;
+          Tone.Transport.loopEnd = totalDuration;
+        } else {
+          Tone.Transport.loop = false;
+          // If it was looping and now it's not, we might need to schedule a stop
+          // This part is complex as the playhead might be past totalDuration if it was looping
+          // For simplicity, current behavior: if loop is turned off mid-play, it continues till manually stopped or natural end if that was scheduled
+        }
+      }
+      return newLoopState;
+    });
+  }, [toast, isPlaying, audioBlocks]);
+
   const handlePlay = useCallback(async () => {
     if (!audioContextStarted) {
       await startAudioContext();
     }
     if (Tone.context.state !== 'running') {
-      // This case should ideally be handled by startAudioContext,
-      // but as a fallback ensure Tone.start is called.
       await Tone.start(); 
     }
     if (audioBlocks.length === 0) {
@@ -77,7 +102,7 @@ export default function MusicSyncPage() {
       return;
     }
 
-    Tone.Transport.cancel();
+    Tone.Transport.cancel(); // Clear any previous schedules
     activeOscillators.current.forEach(osc => osc.dispose());
     activeOscillators.current = [];
 
@@ -85,24 +110,34 @@ export default function MusicSyncPage() {
       const osc = new Tone.Oscillator({
         type: block.waveform,
         frequency: block.frequency,
-        volume: -6, // Default volume to prevent clipping
+        volume: -6,
       }).toDestination();
       osc.start(block.startTime).stop(block.startTime + block.duration);
       activeOscillators.current.push(osc);
     });
 
     const totalDuration = audioBlocks.reduce((sum, b) => sum + b.duration, 0);
-    Tone.Transport.scheduleOnce(() => {
-      setIsPlaying(false);
-    }, totalDuration + 0.01); // Add small buffer
+
+    if (isLooping) {
+      Tone.Transport.loop = true;
+      Tone.Transport.loopStart = 0;
+      Tone.Transport.loopEnd = totalDuration;
+    } else {
+      Tone.Transport.loop = false;
+      Tone.Transport.scheduleOnce(() => {
+        setIsPlaying(false);
+      }, totalDuration + 0.01); 
+    }
 
     Tone.Transport.start();
     setIsPlaying(true);
-  }, [audioBlocks, audioContextStarted, startAudioContext, toast]);
+  }, [audioBlocks, audioContextStarted, startAudioContext, toast, isLooping, recalculateStartTimes]);
+
 
   const handleStop = useCallback(() => {
     Tone.Transport.stop();
-    Tone.Transport.cancel(); // Important to cancel scheduled events like the 'natural end' stop
+    Tone.Transport.cancel(); 
+    Tone.Transport.loop = false; // Explicitly turn off looping
     activeOscillators.current.forEach(osc => osc.dispose());
     activeOscillators.current = [];
     setIsPlaying(false);
@@ -120,7 +155,10 @@ export default function MusicSyncPage() {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
       }
-      setCurrentPlayTime(Tone.Transport.seconds); // Ensure final position is updated
+      // Update time one last time when stopping, unless it was reset by handleStop
+      if (Tone.Transport.seconds !== 0) {
+         setCurrentPlayTime(Tone.Transport.seconds);
+      }
     }
     return () => {
       if (animationFrameId.current) {
@@ -129,11 +167,11 @@ export default function MusicSyncPage() {
     };
   }, [isPlaying]);
 
-  // Cleanup Tone.Transport on unmount
   useEffect(() => {
     return () => {
       Tone.Transport.stop();
       Tone.Transport.cancel();
+      Tone.Transport.loop = false;
       activeOscillators.current.forEach(osc => osc.dispose());
     };
   }, []);
@@ -151,9 +189,11 @@ export default function MusicSyncPage() {
         <div className="p-6 flex-grow flex flex-col space-y-6">
           <ControlsComponent
             isPlaying={isPlaying}
+            isLooping={isLooping}
             onPlay={handlePlay}
             onStop={handleStop}
             onAddBlock={handleAddBlock}
+            onToggleLoop={handleToggleLoop}
             canPlay={audioBlocks.length > 0}
           />
 

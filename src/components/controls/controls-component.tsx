@@ -1,22 +1,27 @@
+
 "use client";
 
 import type React from 'react';
 import { Button } from '@/components/ui/button';
-import { PlayIcon, StopCircleIcon, PlusIcon } from 'lucide-react';
+import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon } from 'lucide-react';
 
 interface ControlsComponentProps {
   isPlaying: boolean;
+  isLooping: boolean;
   onPlay: () => void;
   onStop: () => void;
   onAddBlock: () => void;
+  onToggleLoop: () => void;
   canPlay: boolean;
 }
 
 export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   isPlaying,
+  isLooping,
   onPlay,
   onStop,
   onAddBlock,
+  onToggleLoop,
   canPlay,
 }) => {
   return (
@@ -44,6 +49,16 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
       >
         <StopCircleIcon className="mr-2 h-5 w-5" />
         Stop
+      </Button>
+      <Button
+        onClick={onToggleLoop}
+        variant={isLooping ? "default" : "outline"}
+        className="transition-transform hover:scale-105"
+        aria-pressed={isLooping}
+        aria-label={isLooping ? "Disable loop" : "Enable loop"}
+      >
+        <RepeatIcon className="mr-2 h-5 w-5" />
+        {isLooping ? "Looping" : "Loop"}
       </Button>
     </div>
   );
