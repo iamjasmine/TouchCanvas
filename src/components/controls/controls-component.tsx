@@ -3,7 +3,7 @@
 
 import type React from 'react';
 import { Button } from '@/components/ui/button';
-import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon } from 'lucide-react';
+import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon } from 'lucide-react';
 
 interface ControlsComponentProps {
   isPlaying: boolean;
@@ -11,6 +11,7 @@ interface ControlsComponentProps {
   onPlay: () => void;
   onStop: () => void;
   onAddBlock: () => void;
+  onAddSilenceBlock: () => void;
   onToggleLoop: () => void;
   canPlay: boolean;
 }
@@ -21,14 +22,19 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   onPlay,
   onStop,
   onAddBlock,
+  onAddSilenceBlock,
   onToggleLoop,
   canPlay,
 }) => {
   return (
-    <div className="flex items-center space-x-4 p-4 bg-muted rounded-lg shadow">
+    <div className="flex flex-wrap items-center gap-2 p-4 bg-muted rounded-lg shadow">
       <Button onClick={onAddBlock} variant="outline" className="transition-transform hover:scale-105">
         <PlusIcon className="mr-2 h-5 w-5" />
         Add Audio Block
+      </Button>
+      <Button onClick={onAddSilenceBlock} variant="outline" className="transition-transform hover:scale-105">
+        <MicOffIcon className="mr-2 h-5 w-5" />
+        Add Silence
       </Button>
       <Button
         onClick={onPlay}

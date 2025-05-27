@@ -4,7 +4,7 @@
 import type React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import * as Tone from 'tone';
-import type { AudioBlock } from '@/types';
+import type { AudioBlock, AudibleAudioBlock, SilentAudioBlock } from '@/types';
 import { useToneContext } from '@/components/providers/tone-provider';
 import { ControlsComponent } from '@/components/controls/controls-component';
 import { TimelineComponent } from '@/components/timeline/timeline-component';
@@ -40,19 +40,36 @@ export default function MusicSyncPage() {
 
   const handleAddBlock = useCallback(() => {
     const newBlockId = crypto.randomUUID();
-    const newBlock: AudioBlock = {
+    const newBlock: AudibleAudioBlock = {
       id: newBlockId,
       waveform: 'sine',
       frequency: 100,
       duration: 2,
       startTime: 0, // Will be recalculated
+      isSilent: false,
     };
     setAudioBlocks(prevBlocks => {
       const updatedBlocks = [...prevBlocks, newBlock];
       return recalculateStartTimes(updatedBlocks);
     });
     setSelectedBlockId(newBlockId);
-    toast({ title: "Block Added", description: "A new audio block has been added to the timeline." });
+    toast({ title: "Audio Block Added", description: "A new audio block has been added." });
+  }, [recalculateStartTimes, toast]);
+
+  const handleAddSilenceBlock = useCallback(() => {
+    const newBlockId = crypto.randomUUID();
+    const newBlock: SilentAudioBlock = {
+      id: newBlockId,
+      duration: 1, // Default duration for silence
+      startTime: 0, // Will be recalculated
+      isSilent: true,
+    };
+    setAudioBlocks(prevBlocks => {
+      const updatedBlocks = [...prevBlocks, newBlock];
+      return recalculateStartTimes(updatedBlocks);
+    });
+    setSelectedBlockId(newBlockId);
+    toast({ title: "Silence Block Added", description: "A new silence block has been added." });
   }, [recalculateStartTimes, toast]);
 
   const handleSelectBlock = useCallback((id: string) => {
@@ -62,6 +79,8 @@ export default function MusicSyncPage() {
   const handleUpdateBlock = useCallback((updatedBlockData: AudioBlock) => {
     setAudioBlocks(prevBlocks => {
       const updatedBlocks = prevBlocks.map(b => b.id === updatedBlockData.id ? updatedBlockData : b);
+      // Ensure the updated block is correctly typed before passing to recalculateStartTimes if necessary
+      // For now, recalculateStartTimes handles the generic AudioBlock fine.
       return recalculateStartTimes(updatedBlocks);
     });
   }, [recalculateStartTimes]);
@@ -70,17 +89,20 @@ export default function MusicSyncPage() {
     if (isInitialMount.current) {
       isInitialMount.current = false;
     } else {
-      toast({
-        title: isLooping ? "Loop Enabled" : "Loop Disabled",
-        description: isLooping ? "Playback will now loop." : "Playback will not loop.",
-      });
+      // Avoid toast on initial render for isLooping state
+      if (toast && typeof isLooping === 'boolean') { // check if toast is defined
+        toast({
+            title: isLooping ? "Loop Enabled" : "Loop Disabled",
+            description: isLooping ? "Playback will now loop." : "Playback will not loop.",
+        });
+      }
     }
   }, [isLooping, toast]);
+
 
   const handleToggleLoop = useCallback(() => {
     setIsLooping(prev => {
       const newLoopState = !prev;
-      // Toast logic moved to useEffect
       if (isPlaying && audioBlocks.length > 0) {
         const totalDuration = audioBlocks.reduce((sum, b) => sum + b.duration, 0);
         if (newLoopState) {
@@ -112,12 +134,17 @@ export default function MusicSyncPage() {
     activeOscillators.current = [];
 
     audioBlocks.forEach(block => {
+      if (block.isSilent) { // Skip silent blocks
+        return;
+      }
+      // At this point, block is AudibleAudioBlock
+      const audibleBlock = block as AudibleAudioBlock;
       const osc = new Tone.Oscillator({
-        type: block.waveform,
-        frequency: block.frequency,
+        type: audibleBlock.waveform,
+        frequency: audibleBlock.frequency,
         volume: -6,
       }).toDestination();
-      osc.start(block.startTime).stop(block.startTime + block.duration);
+      osc.start(audibleBlock.startTime).stop(audibleBlock.startTime + audibleBlock.duration);
       activeOscillators.current.push(osc);
     });
 
@@ -160,7 +187,6 @@ export default function MusicSyncPage() {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
       }
-      // Update time one last time when stopping, unless it was reset by handleStop
       if (Tone.Transport.seconds !== 0) {
          setCurrentPlayTime(Tone.Transport.seconds);
       }
@@ -198,6 +224,7 @@ export default function MusicSyncPage() {
             onPlay={handlePlay}
             onStop={handleStop}
             onAddBlock={handleAddBlock}
+            onAddSilenceBlock={handleAddSilenceBlock}
             onToggleLoop={handleToggleLoop}
             canPlay={audioBlocks.length > 0}
           />

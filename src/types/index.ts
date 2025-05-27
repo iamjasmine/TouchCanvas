@@ -1,9 +1,20 @@
+
 export type WaveformType = 'sine' | 'triangle' | 'square' | 'sawtooth';
 
-export interface AudioBlock {
+interface BaseBlock {
   id: string;
-  waveform: WaveformType;
-  frequency: number; // Hz
   duration: number;  // seconds
   startTime: number; // seconds from start of timeline
 }
+
+export interface AudibleAudioBlock extends BaseBlock {
+  isSilent?: false; // Can be omitted or explicitly false
+  waveform: WaveformType;
+  frequency: number; // Hz
+}
+
+export interface SilentAudioBlock extends BaseBlock {
+  isSilent: true;
+}
+
+export type AudioBlock = AudibleAudioBlock | SilentAudioBlock;
