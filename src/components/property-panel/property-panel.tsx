@@ -142,7 +142,7 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
             <Slider
               id="frequency"
               min={10}
-              max={1000} // Increased max frequency
+              max={300} 
               step={1}
               value={[audibleBlock.frequency]}
               onValueChange={(value) => handleAudibleSliderChange('frequency', value)}
@@ -170,7 +170,7 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
             <div>
               {adsrTooltip("Fade In (Attack)", "Time for sound to reach full volume.", 
                 <Label htmlFor="attack" className="text-sm font-medium flex items-center">
-                  <span className="mr-1">↗️</span>Fade In ({formatSeconds(audibleBlock.attack)}, {formatPercentage(audibleBlock.attack / audibleBlock.duration)})
+                  <span className="mr-1">↗️</span>Fade In ({formatSeconds(audibleBlock.attack)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.attack / audibleBlock.duration) : 'N/A'})
                 </Label>
               )}
               <Slider
@@ -184,7 +184,7 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
             <div>
               {adsrTooltip("Volume Drop (Decay)", "Time for sound to drop to sustain level.",
                 <Label htmlFor="decay" className="text-sm font-medium flex items-center">
-                  <span className="mr-1">↘️</span>Volume Drop ({formatSeconds(audibleBlock.decay)}, {formatPercentage(audibleBlock.decay / audibleBlock.duration)})
+                  <span className="mr-1">↘️</span>Volume Drop ({formatSeconds(audibleBlock.decay)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.decay / audibleBlock.duration) : 'N/A'})
                 </Label>
               )}
               <Slider
@@ -212,7 +212,7 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
             <div>
               {adsrTooltip("Fade Out (Release)", "Time for sound to fade to silence at the end.",
                 <Label htmlFor="release" className="text-sm font-medium flex items-center">
-                  <span className="mr-1">↘️</span>Fade Out ({formatSeconds(audibleBlock.release)}, {formatPercentage(audibleBlock.release / audibleBlock.duration)})
+                  <span className="mr-1">↘️</span>Fade Out ({formatSeconds(audibleBlock.release)}, {audibleBlock.duration > 0 ? formatPercentage(audibleBlock.release / audibleBlock.duration) : 'N/A'})
                 </Label>
               )}
               <Slider
@@ -232,3 +232,4 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
     </Card>
   );
 };
+
