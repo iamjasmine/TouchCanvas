@@ -4,7 +4,7 @@ import type React from 'react';
 import type { AudioBlock, WaveformType } from '@/types';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Waves, Activity, Square, TrendingUp } from 'lucide-react'; // Changed SineWave to Waves
+import { Waves, Activity, Square, TrendingUp } from 'lucide-react';
 
 interface AudioBlockComponentProps {
   block: AudioBlock;
@@ -14,7 +14,7 @@ interface AudioBlockComponentProps {
 }
 
 const waveformIcons: Record<WaveformType, React.ElementType> = {
-  sine: Waves, // Changed SineWave to Waves
+  sine: Waves,
   triangle: Activity, 
   square: Square,
   sawtooth: TrendingUp,
@@ -60,10 +60,6 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
         <p className="text-lg font-semibold">{block.frequency} Hz</p>
         <p className="text-xs opacity-80">{block.duration.toFixed(1)} s</p>
       </CardContent>
-       {/* Placeholder for waveform visualization if desired in future */}
-       <div className="absolute bottom-1 left-1 right-1 h-4 bg-black/10 rounded-sm overflow-hidden">
-        <div className="h-full bg-white/30" style={{ width: `${Math.random() * 80 + 20}%` }} data-ai-hint="abstract soundwave"></div>
-      </div>
     </Card>
   );
 };
