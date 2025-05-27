@@ -17,6 +17,7 @@ import { PlusIcon, ListMusicIcon } from 'lucide-react';
 
 const PIXELS_PER_SECOND = 60;
 const MIN_SUSTAIN_TIME = 0.05; // Minimum duration for the sustain phase
+const PLAYBACK_START_DELAY = 0.1; // Small delay before starting playback with absolute time
 
 const calculateADSRDefaults = (duration: number): Pick<AudibleAudioBlock, 'attack' | 'decay' | 'sustainLevel' | 'release'> => {
   return {
@@ -110,13 +111,14 @@ export default function MusicSyncPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isActivatingAudio, setIsActivatingAudio] = useState(false);
   const [currentPlayTime, setCurrentPlayTime] = useState(0); 
-  const [isLooping, setIsLooping] = useState(false);
+  // const [isLooping, setIsLooping] = useState(false); // Temporarily removed for absolute time scheduling
   const [outputMode, setOutputMode] = useState<'mixed' | 'independent'>('mixed');
   const [masterVolume, setMasterVolume] = useState<number>(0.75);
 
   const activeAudioNodesMap = useRef<Map<string, ActiveChannelAudioNodes[]>>(new Map());
   const animationFrameId = useRef<number | null>(null);
   const masterVolumeNodeRef = useRef<Tone.Volume | null>(null);
+  const playbackStartTimeRef = useRef<number | null>(null); // For tracking playhead with absolute time
   
   const isInitialMount = useRef({ looping: true, outputMode: true, masterVolume: true, channelVolume: true });
 
@@ -206,6 +208,8 @@ export default function MusicSyncPage() {
   }, []);
 
   const recalculateChannelBlockStartTimes = useCallback((blocks: AudioBlock[]): AudioBlock[] => {
+    // This function might become less relevant if start times are calculated on-the-fly for absolute scheduling
+    // However, keeping it for potential future use or if relative start times within a channel are still needed for UI.
     let cumulativeTime = 0;
     return blocks.map(block => {
       const newStartTime = cumulativeTime;
@@ -276,7 +280,9 @@ export default function MusicSyncPage() {
 
     setChannels(prevChannels => prevChannels.map(ch => {
       if (ch.id === selectedChannelId) {
+        // startTime is now relative to channel, not absolute. Absolute calculation happens at play.
         const updatedBlocks = [...ch.audioBlocks, newBlock];
+        // recalculateChannelBlockStartTimes might still be useful for UI or if blocks within a channel need relative start times
         return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
       }
       return ch;
@@ -359,34 +365,19 @@ export default function MusicSyncPage() {
     toast({ title: "Block Deleted", description: `Block removed from ${selectedChannel?.name}.`, variant: "destructive" });
   }, [selectedChannelId, selectedBlockId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
 
-  useEffect(() => { if (!isInitialMount.current.looping) { if (toast && typeof isLooping === 'boolean') { toast({ title: isLooping ? "Loop Enabled" : "Loop Disabled", description: isLooping ? "Playback will now loop." : "Playback will not loop." }); } } else { isInitialMount.current.looping = false; } }, [isLooping, toast]);
+  // useEffect(() => { if (!isInitialMount.current.looping) { if (toast && typeof isLooping === 'boolean') { toast({ title: isLooping ? "Loop Enabled" : "Loop Disabled", description: isLooping ? "Playback will now loop." : "Playback will not loop." }); } } else { isInitialMount.current.looping = false; } }, [isLooping, toast]); // Looping temporarily removed
   useEffect(() => { if (!isInitialMount.current.outputMode) { if (toast) { toast({ title: "Output Mode Changed", description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.` }); } } else { isInitialMount.current.outputMode = false; } }, [outputMode, toast]);
   useEffect(() => { if (!isInitialMount.current.masterVolume && masterVolumeNodeRef.current) { if (toast) { toast({ title: "Master Volume Changed", description: `Volume set to ${Math.round(masterVolume * 100)}%` }); } } else { isInitialMount.current.masterVolume = false; } }, [masterVolume, toast]);
 
 
-  const handleToggleLoop = useCallback(() => {
-    setIsLooping(prev => {
-      const newLoopState = !prev;
-      const longestChannelDuration = Math.max(0, ...channels.map(ch => ch.audioBlocks.reduce((sum, b) => sum + b.duration, 0)));
-      if (isPlaying && longestChannelDuration > 0) {
-        if (newLoopState) {
-          Tone.Transport.loop = true;
-          Tone.Transport.loopStart = 0;
-          Tone.Transport.loopEnd = longestChannelDuration;
-        } else {
-          Tone.Transport.loop = false;
-        }
-      }
-      return newLoopState;
-    });
-  }, [isPlaying, channels]);
+  // const handleToggleLoop = useCallback(() => setIsLooping(prev => !prev), []); // Looping temporarily removed
 
   const handleToggleOutputMode = useCallback(() => {
     setOutputMode(prevMode => (prevMode === 'mixed' ? 'independent' : 'mixed'));
   }, []);
 
   const handlePlay = useCallback(async () => {
-    console.log('[MusicSyncPage] handlePlay: Called.');
+    console.log('[MusicSyncPage] handlePlay: Called. Switching to ABSOLUTE TIME scheduling.');
     if (!(await ensureAudioIsActive())) {
         console.log('[MusicSyncPage] handlePlay: ensureAudioIsActive returned false. Aborting.');
         return;
@@ -399,223 +390,194 @@ export default function MusicSyncPage() {
     }
     console.log('[MusicSyncPage] handlePlay: MasterVolumeNode is ready. Details:', masterVolumeNodeRef.current);
 
-
-    if (channels.every(ch => ch.audioBlocks.length === 0)) {
-      console.log('[MusicSyncPage] handlePlay: No audio blocks in any channel.');
-      toast({ title: "Cannot Play", description: "Add some audio blocks to at least one channel!", variant: "destructive" });
-      return;
-    }
-    
-    const hasAudibleContent = channels.some(ch => 
+    const hasAnyAudibleContent = channels.some(ch => 
         !ch.isMuted && ch.audioBlocks.some(b => !b.isSilent && b.duration > 0)
     );
-
-    if (!hasAudibleContent) {
-        console.log('[MusicSyncPage] handlePlay: No audible content found (all blocks silent, muted, or zero duration).');
+    if (!hasAnyAudibleContent) {
+        console.log('[MusicSyncPage] handlePlay: No audible content found in any active channel.');
         toast({ title: "Nothing to Play", description: "No audible blocks with duration found in active channels.", variant: "default" });
         setIsPlaying(false);
         setCurrentPlayTime(0);
-        Tone.Transport.position = 0;
         return;
     }
 
-    console.log('[MusicSyncPage] handlePlay: Stopping and canceling previous transport events.');
-    Tone.Transport.stop(); 
-    Tone.Transport.cancel(); 
-    Tone.Transport.position = 0; 
-    Tone.Transport.loop = false; // Ensure loop is reset before new scheduling
-
-    console.log("--- Transport State Before Scheduling ---");
-    console.log("Tone.now():", Tone.now());
-    console.log("Tone.Transport.seconds (after reset):", Tone.Transport.seconds);
-    console.log("Tone.Transport.position (after reset):", Tone.Transport.position);
-    console.log("Tone.Transport.state (after reset):", Tone.Transport.state);
-
-
-    console.log('[MusicSyncPage] handlePlay: Disposing old audio nodes.');
+    // Dispose previous nodes before scheduling new ones
     activeAudioNodesMap.current.forEach(channelNodes => {
       channelNodes.forEach(nodes => {
         nodes.osc.dispose();
         nodes.adsrGain.dispose();
-        nodes.channelVolumeNode.dispose();
+        nodes.channelVolumeNode.dispose(); // This might dispose the master if not careful - ensure it's distinct
       });
     });
     activeAudioNodesMap.current.clear();
-
+    
+    const baseAbsoluteTime = Tone.now() + PLAYBACK_START_DELAY;
+    console.log(`[MusicSyncPage] handlePlay: Base absolute time for scheduling: ${baseAbsoluteTime}`);
     console.log(`[MusicSyncPage] handlePlay: Number of channels: ${channels.length}. Channels data:`, JSON.parse(JSON.stringify(channels)));
+
+    let maxOverallDuration = 0;
 
     channels.forEach(channel => {
       if (channel.isMuted || channel.audioBlocks.length === 0) {
-        console.log(`[MusicSyncPage] handlePlay: Skipping channel ${channel.name} (ID: ${channel.id}) because it is muted or has no blocks.`);
+        console.log(`[MusicSyncPage] handlePlay: Skipping channel ${channel.name} (ID: ${channel.id}) - muted or no blocks.`);
         return;
       }
-      console.log(`[MusicSyncPage] handlePlay: Processing channel ${channel.name} (ID: ${channel.id}). Number of audio blocks: ${channel.audioBlocks.length}`);
-      console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name} blocks:`, JSON.parse(JSON.stringify(channel.audioBlocks)));
+      console.log(`[MusicSyncPage] handlePlay: Processing channel ${channel.name} (ID: ${channel.id}). Blocks: ${channel.audioBlocks.length}`);
       
       const channelSpecificNodes: ActiveChannelAudioNodes[] = [];
       const channelVolDb = (channel.volume > 0.001 && !channel.isMuted) ? Tone.gainToDb(channel.volume) : -Infinity;
       
       const channelVolumeNode = new Tone.Volume(channelVolDb);
-      console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name} (ID: ${channel.id}) VolumeNode created, volume: ${channelVolDb}dB. Node details:`, channelVolumeNode);
+      console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name} (ID: ${channel.id}) VolumeNode created, volume: ${channelVolDb}dB.`);
 
       if (!masterVolumeNodeRef.current) {
           console.error(`[MusicSyncPage] handlePlay: CRITICAL ERROR for channel ${channel.name} - masterVolumeNodeRef.current is null before connecting ChannelVolumeNode.`);
           return; 
       }
-      
       console.log(`[MusicSyncPage] handlePlay: Connecting ChannelVolumeNode for ${channel.name} to MasterVolumeNode.`);
       channelVolumeNode.connect(masterVolumeNodeRef.current);
-      console.log(`[MusicSyncPage] handlePlay: MasterVolumeNode (after channel ${channel.name} connect) outputs: ${masterVolumeNodeRef.current.numberOfOutputs}, MasterVolumeNode inputs: ${masterVolumeNodeRef.current.numberOfInputs}. MasterVolumeNode details:`, masterVolumeNodeRef.current);
+      console.log(`[MusicSyncPage] handlePlay: MasterVolumeNode (after channel ${channel.name} connect) outputs: ${masterVolumeNodeRef.current.numberOfOutputs}, inputs: ${masterVolumeNodeRef.current.numberOfInputs}.`);
       
-      channel.audioBlocks.forEach(block => {
+      let currentChannelAbsoluteTime = baseAbsoluteTime;
+      let currentChannelDuration = 0;
+
+      channel.audioBlocks.forEach((block, blockIndex) => {
         if (block.isSilent) {
-            console.log(`[MusicSyncPage] handlePlay: Skipping silent block ${block.id} in channel ${channel.name}.`);
+            console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name}, Block ${blockIndex} (ID: ${block.id}) is SILENT. Duration: ${block.duration}s. Advancing time.`);
+            currentChannelAbsoluteTime += block.duration;
+            currentChannelDuration += block.duration;
             return;
         }
 
         const audibleBlock = block as AudibleAudioBlock;
-        console.log(`[MusicSyncPage] handlePlay: PROCESSING AUDIBLE BLOCK for channel ${channel.name}: ID=${audibleBlock.id}, Wave=${audibleBlock.waveform}, Freq=${audibleBlock.frequency}Hz, Dur=${audibleBlock.duration}s, StartTime=${audibleBlock.startTime}s`);
-        console.log(`[MusicSyncPage] handlePlay: ADSR for block ${audibleBlock.id}: A=${audibleBlock.attack}, D=${audibleBlock.decay}, S=${audibleBlock.sustainLevel}, R=${audibleBlock.release}`);
-
+        console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name}, Block ${blockIndex} (ID: ${audibleBlock.id}) PROCESSING. Freq=${audibleBlock.frequency}Hz, Dur=${audibleBlock.duration}s. Scheduled to start at absolute time: ${currentChannelAbsoluteTime.toFixed(3)}`);
+        if (audibleBlock.frequency < 40 && audibleBlock.frequency > 0) {
+          console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} in channel ${channel.name} has a very low frequency (${audibleBlock.frequency}Hz).`);
+        }
         if (audibleBlock.duration <= 0) {
             console.log(`[MusicSyncPage] handlePlay: Skipping audible block ${audibleBlock.id} due to zero or negative duration.`);
             return; 
         }
-        if (audibleBlock.frequency <=0) {
-             console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} has frequency <= 0 (${audibleBlock.frequency}Hz). This will likely not produce sound.`);
-        }
-        if (audibleBlock.frequency < 40 && audibleBlock.frequency > 0) {
-             console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} in channel ${channel.name} has a very low frequency (${audibleBlock.frequency}Hz) which may be inaudible or rumble-like.`);
-        }
-
-        const osc = new Tone.Oscillator({
-          type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6, 
-        });
         
+        const osc = new Tone.Oscillator({ type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6 });
         const adsrGain = new Tone.Gain(0).connect(channelVolumeNode); 
         osc.connect(adsrGain);
-        console.log(`[MusicSyncPage] handlePlay: Created Oscillator and ADSR Gain for block ${audibleBlock.id}. Osc connected to ADSRGain, ADSRGain connected to ChannelVolumeNode.`);
         
-        const { startTime, duration, attack, decay, sustainLevel, release } = audibleBlock;
-        const attackEndTime = startTime + attack;
-        const decayEndTime = attackEndTime + decay;
-        const releaseStartTime = startTime + duration - release; 
-        const effectiveEndTime = startTime + duration;
+        const { duration, attack, decay, sustainLevel, release } = audibleBlock;
+        
+        // ADSR Scheduling with absolute times
+        const blockAbsStartTime = currentChannelAbsoluteTime;
+        const attackAbsEndTime = blockAbsStartTime + attack;
+        const decayAbsEndTime = attackAbsEndTime + decay;
+        const releaseAbsStartTime = blockAbsStartTime + duration - release;
+        const blockAbsEndTime = blockAbsStartTime + duration;
 
-        console.log(`[MusicSyncPage] handlePlay: SCHEDULING ADSR for block ${audibleBlock.id}: RelStartTime=${startTime.toFixed(3)}, RelDuration=${duration.toFixed(3)}, AttackTime=${attack.toFixed(3)} (ends @ rel ${attackEndTime.toFixed(3)}), DecayTime=${decay.toFixed(3)} (ends @ rel ${decayEndTime.toFixed(3)}), SustainLevel=${sustainLevel.toFixed(2)}, ReleaseTime=${release.toFixed(3)} (starts @ rel ${releaseStartTime.toFixed(3)}, ends @ rel ${effectiveEndTime.toFixed(3)})`);
+        console.log(`[MusicSyncPage] ADSR for block ${audibleBlock.id}: StartAbs=${blockAbsStartTime.toFixed(3)}, AttackEndsAbs=${attackAbsEndTime.toFixed(3)}, DecayEndsAbs=${decayAbsEndTime.toFixed(3)}, SustainLevel=${sustainLevel.toFixed(2)}, ReleaseStartsAbs=${releaseAbsStartTime.toFixed(3)}, BlockEndsAbs=${blockAbsEndTime.toFixed(3)}`);
 
-        adsrGain.gain.setValueAtTime(0, startTime); 
+        adsrGain.gain.setValueAtTime(0, blockAbsStartTime);
+        if (attack > 0) adsrGain.gain.linearRampToValueAtTime(1, attackAbsEndTime);
+        else adsrGain.gain.setValueAtTime(1, blockAbsStartTime);
         
-        if (attack > 0) {
-            adsrGain.gain.linearRampToValueAtTime(1, attackEndTime);
-        } else {
-            adsrGain.gain.setValueAtTime(1, startTime); 
-        }
-        
-        if (decay > 0) {
-            adsrGain.gain.linearRampToValueAtTime(sustainLevel, decayEndTime);
-        } else {
-            adsrGain.gain.setValueAtTime(sustainLevel, attackEndTime);
-        }
+        if (decay > 0) adsrGain.gain.linearRampToValueAtTime(sustainLevel, decayAbsEndTime);
+        else adsrGain.gain.setValueAtTime(sustainLevel, attackAbsEndTime);
 
-        if (releaseStartTime > decayEndTime) { 
-            adsrGain.gain.setValueAtTime(sustainLevel, releaseStartTime);
+        if (releaseAbsStartTime > decayAbsEndTime) { // Ensure sustain is held if there's a gap
+             adsrGain.gain.setValueAtTime(sustainLevel, releaseAbsStartTime);
         }
         
-        if (release > 0) {
-            adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
-        } else {
-            adsrGain.gain.setValueAtTime(0, effectiveEndTime); 
-        }
+        if (release > 0) adsrGain.gain.linearRampToValueAtTime(0, blockAbsEndTime);
+        else adsrGain.gain.setValueAtTime(0, blockAbsEndTime);
         
-        console.log(`[MusicSyncPage] handlePlay: Oscillator for block ${audibleBlock.id} scheduled: osc.start(transportTime: ${startTime.toFixed(3)}), osc.stop(transportTime: ${(effectiveEndTime).toFixed(3)}) (stop offset by +0.1 internally in Tone.js for ramps)`);
-        osc.start(startTime);
-        osc.stop(effectiveEndTime); 
+        console.log(`[MusicSyncPage] Oscillator for block ${audibleBlock.id} scheduled: osc.start(${blockAbsStartTime.toFixed(3)}), osc.stop(${blockAbsEndTime.toFixed(3)})`);
+        osc.start(blockAbsStartTime);
+        osc.stop(blockAbsEndTime); 
 
         channelSpecificNodes.push({ osc, adsrGain, channelVolumeNode });
+        currentChannelAbsoluteTime += duration;
+        currentChannelDuration += duration;
       });
+
+      if (currentChannelDuration > maxOverallDuration) {
+        maxOverallDuration = currentChannelDuration;
+      }
+
       if (channelSpecificNodes.length > 0) {
         activeAudioNodesMap.current.set(channel.id, channelSpecificNodes);
-        console.log(`[MusicSyncPage] handlePlay: Stored ${channelSpecificNodes.length} active audio nodes for channel ${channel.name} (ID: ${channel.id})`);
+        console.log(`[MusicSyncPage] handlePlay: Stored ${channelSpecificNodes.length} active audio nodes for channel ${channel.name}.`);
       } else {
-        console.log(`[MusicSyncPage] handlePlay: No active audio nodes created for channel ${channel.name} (ID: ${channel.id}) (might be all silent blocks or zero duration audible blocks).`);
+        console.log(`[MusicSyncPage] handlePlay: No active audio nodes created for channel ${channel.name}.`);
       }
     });
 
-    const longestChannelDuration = Math.max(0, ...channels.map(ch => ch.audioBlocks.reduce((sum, b) => sum + b.duration, 0)));
-    console.log(`[MusicSyncPage] handlePlay: Longest channel duration: ${longestChannelDuration}s. isLooping: ${isLooping}`);
-    
-    console.log("--- Transport State After Scheduling, Before Start ---");
-    console.log("Tone.Transport.seconds:", Tone.Transport.seconds);
-    console.log("Tone.Transport.position:", Tone.Transport.position);
-    console.log("Tone.Transport.state:", Tone.Transport.state);
+    if (maxOverallDuration > 0) {
+        playbackStartTimeRef.current = Tone.now(); // For UI playback indicator
+        setIsPlaying(true);
+        console.log(`[MusicSyncPage] handlePlay: Playback initiated. Max sequence duration: ${maxOverallDuration.toFixed(3)}s.`);
 
-    if (longestChannelDuration === 0 && !isLooping) {
-        console.log('[MusicSyncPage] handlePlay: No duration and not looping, stopping playback state.');
-        setIsPlaying(false);
-        setCurrentPlayTime(0); 
-        Tone.Transport.position = 0;
-        return; 
-    }
-    
-    if (isLooping && longestChannelDuration > 0) {
-      Tone.Transport.loop = true;
-      Tone.Transport.loopStart = 0;
-      Tone.Transport.loopEnd = longestChannelDuration;
-      console.log(`[MusicSyncPage] handlePlay: Loop enabled. LoopStart: 0, LoopEnd: ${longestChannelDuration}s`);
+        // Schedule a master stop if not looping (looping temporarily removed)
+        setTimeout(() => {
+            if (isPlayingRef.current) { // Check if still playing, might have been stopped manually
+                 console.log('[MusicSyncPage] handlePlay: Automatic stop after max duration.');
+                 handleStop(); // Or a gentler stop that doesn't clear everything if looping is re-added
+            }
+        }, (maxOverallDuration + PLAYBACK_START_DELAY + 0.2) * 1000); // Add start delay and small buffer
+
     } else {
-      Tone.Transport.loop = false;
-      if (longestChannelDuration > 0) { 
-        Tone.Transport.scheduleOnce(() => {
-          console.log('[MusicSyncPage] handlePlay: Playback finished (scheduled stop for non-looping).');
-          setIsPlaying(false);
-          setCurrentPlayTime(0); 
-          Tone.Transport.position = 0; 
-        }, longestChannelDuration + 0.2); // Small buffer after the last block
-         console.log(`[MusicSyncPage] handlePlay: Scheduled stop for non-looping playback at transport time ${longestChannelDuration + 0.2}s.`);
-      }
+        console.log('[MusicSyncPage] handlePlay: Max overall duration is 0, nothing to play.');
+        setIsPlaying(false);
     }
 
-    console.log('[MusicSyncPage] handlePlay: Starting Tone.Transport (+0.1s delay).');
-    Tone.Transport.start("+0.1"); 
-    setIsPlaying(true);
-  }, [audioContextStarted, toast, isLooping, masterVolume, channels, outputMode, recalculateChannelBlockStartTimes, ensureAudioIsActive, currentPlayTime]);
+  }, [audioContextStarted, toast, masterVolume, channels, outputMode, ensureAudioIsActive, recalculateChannelBlockStartTimes]);
+
+  const isPlayingRef = useRef(isPlaying);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
 
   const handleStop = useCallback(() => {
     console.log('[MusicSyncPage] handleStop: Called.');
-    Tone.Transport.stop();
-    Tone.Transport.cancel(); 
-    Tone.Transport.loop = false; 
-    console.log('[MusicSyncPage] handleStop: Disposing active audio nodes.');
     activeAudioNodesMap.current.forEach((channelNodes, channelId) => {
       channelNodes.forEach(nodes => {
+        // It's important to cancel scheduled values before disposing
+        nodes.adsrGain.gain.cancelScheduledValues(Tone.now());
+        nodes.osc.stop(Tone.now()); // Stop immediately
         nodes.osc.dispose();
         nodes.adsrGain.dispose();
-        nodes.channelVolumeNode.dispose(); 
+        nodes.channelVolumeNode.dispose(); // Dispose per-channel volume nodes
       });
       console.log(`[MusicSyncPage] handleStop: Disposed nodes for channel ID ${channelId}`);
     });
     activeAudioNodesMap.current.clear();
+    
+    // If Tone.Transport was used, this would be relevant. With absolute time, less so, but good for safety.
+    // Tone.Transport.stop();
+    // Tone.Transport.cancel(); 
+    // Tone.Transport.position = 0; 
+
     setIsPlaying(false);
     setCurrentPlayTime(0); 
-    Tone.Transport.position = 0; 
+    playbackStartTimeRef.current = null;
     console.log('[MusicSyncPage] handleStop: Playback stopped and state reset.');
   }, []);
 
   useEffect(() => {
-    if (isPlaying) {
-      const update = () => {
-        setCurrentPlayTime(Tone.Transport.seconds);
-        animationFrameId.current = requestAnimationFrame(update);
+    if (isPlaying && playbackStartTimeRef.current !== null) {
+      const updatePlayhead = () => {
+        if (playbackStartTimeRef.current === null || !isPlayingRef.current) { // Check isPlayingRef
+          if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+          return;
+        }
+        const elapsed = Tone.now() - playbackStartTimeRef.current;
+        setCurrentPlayTime(elapsed);
+        animationFrameId.current = requestAnimationFrame(updatePlayhead);
       };
-      animationFrameId.current = requestAnimationFrame(update);
+      animationFrameId.current = requestAnimationFrame(updatePlayhead);
     } else {
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-      setCurrentPlayTime(Tone.Transport.seconds); 
     }
     return () => { if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current); };
-  }, [isPlaying]);
+  }, [isPlaying]); // isPlayingRef is not needed here as isPlaying triggers the effect.
 
   useEffect(() => { 
     return () => {
@@ -648,7 +610,7 @@ export default function MusicSyncPage() {
         <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-4 sm:space-y-6 overflow-hidden">
           <ControlsComponent
             isPlaying={isPlaying}
-            isLooping={isLooping}
+            isLooping={false} // Looping temporarily disabled
             isActivatingAudio={isActivatingAudio}
             outputMode={outputMode}
             masterVolume={masterVolume}
@@ -656,7 +618,7 @@ export default function MusicSyncPage() {
             onStop={handleStop}
             onAddBlock={handleAddBlock}
             onAddSilenceBlock={handleAddSilenceBlock}
-            onToggleLoop={handleToggleLoop}
+            onToggleLoop={() => { /* Looping temporarily disabled */ }}
             onToggleOutputMode={handleToggleOutputMode}
             onMasterVolumeChange={handleMasterVolumeChange}
             onTestAudio={testAudio} 
@@ -706,5 +668,3 @@ export default function MusicSyncPage() {
     </div>
   );
 }
-
-    
