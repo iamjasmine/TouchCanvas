@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusIcon, ListMusicIcon } from 'lucide-react';
 
 const PIXELS_PER_SECOND = 60;
-const MIN_SUSTAIN_TIME = 0.05;
+const MIN_SUSTAIN_TIME = 0.05; // Minimum duration for the sustain phase
 
 const calculateADSRDefaults = (duration: number): Pick<AudibleAudioBlock, 'attack' | 'decay' | 'sustainLevel' | 'release'> => {
   return {
@@ -30,42 +30,59 @@ const calculateADSRDefaults = (duration: number): Pick<AudibleAudioBlock, 'attac
 const adjustADSR = (block: AudibleAudioBlock): AudibleAudioBlock => {
   let { duration, attack, decay, sustainLevel, release } = block;
 
+  // Basic sanity checks and clamping
   attack = Math.max(0, attack);
   decay = Math.max(0, decay);
   release = Math.max(0, release);
   sustainLevel = Math.max(0, Math.min(sustainLevel, 1));
 
+  // Ensure individual ADSR components do not exceed duration
   attack = Math.min(attack, duration);
   decay = Math.min(decay, duration);
   release = Math.min(release, duration);
   
   let adrSum = attack + decay + release;
 
+  // If duration is very small or zero, zero out ADSR times
+  if (duration <= 0) {
+    attack = 0; decay = 0; release = 0; adrSum = 0;
+  } else {
+    // Scale A, D, R if their sum exceeds available time for them
+    // Available time for A+D+R is duration minus minimum sustain time
+    const maxAllowedAdrSum = Math.max(0, duration - MIN_SUSTAIN_TIME);
+
+    if (adrSum > maxAllowedAdrSum) {
+      if (maxAllowedAdrSum > 0 && adrSum > 0) { 
+        const scale = maxAllowedAdrSum / adrSum;
+        attack *= scale;
+        decay *= scale;
+        release *= scale;
+      } else { // Not enough time even for MIN_SUSTAIN_TIME, so ADSR becomes minimal
+        attack = 0;
+        decay = 0;
+        // Try to preserve release if possible, or set it to duration if everything else is 0
+        release = Math.min(release, duration); 
+        if (duration > 0 && release === 0 && maxAllowedAdrSum <=0) { // if duration must be only sustain
+             // this case implies duration <= MIN_SUSTAIN_TIME. A,D,R must be 0.
+        } else if (duration > 0 && maxAllowedAdrSum <=0) { // duration is less than min_sustain_time
+            release = duration; // make it a quick fade out for the entire duration
+        } else {
+            release = 0;
+        }
+      }
+    }
+  }
+  
+  // Final check: if duration is extremely small, ADR sum might still exceed it.
+  adrSum = attack + decay + release;
   if (adrSum > duration && duration > 0) {
     const scale = duration / adrSum;
     attack *= scale;
     decay *= scale;
     release *= scale;
-    adrSum = duration; 
-  } else if (duration <= 0) {
-    attack = 0; decay = 0; release = 0; adrSum = 0;
   }
 
-  const maxAllowedAdrSum = Math.max(0, duration - MIN_SUSTAIN_TIME);
 
-  if (adrSum > maxAllowedAdrSum) {
-    if (maxAllowedAdrSum > 0 && adrSum > 0) { 
-      const scale = maxAllowedAdrSum / adrSum;
-      attack *= scale;
-      decay *= scale;
-      release *= scale;
-    } else { 
-      attack = 0;
-      decay = 0;
-      release = 0;
-    }
-  }
-  
   const fixNum = (val: number, precision: number = 3) => parseFloat(val.toFixed(precision));
 
   return {
@@ -114,20 +131,30 @@ export default function MusicSyncPage() {
   const selectedBlock = selectedChannel?.audioBlocks.find(block => block.id === selectedBlockId) || null;
 
   useEffect(() => {
-    if (audioContextStarted && !masterVolumeNodeRef.current) {
-      masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
+    if (audioContextStarted) {
+      if (!masterVolumeNodeRef.current) {
+        masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
+      } else {
+        // If already created, just update volume (e.g. on initial masterVolume state change)
+         masterVolumeNodeRef.current.volume.rampTo(Tone.gainToDb(masterVolume), 0.05);
+      }
     }
+    // Cleanup on unmount or if audioContextStarted becomes false (though unlikely)
     return () => {
-      masterVolumeNodeRef.current?.dispose();
-      masterVolumeNodeRef.current = null;
+      if (masterVolumeNodeRef.current && !audioContextStarted) {
+         masterVolumeNodeRef.current?.dispose();
+         masterVolumeNodeRef.current = null;
+      }
     };
-  }, [audioContextStarted, masterVolume]); 
+  }, [audioContextStarted, masterVolume]); // Rerun if audioContextStarted or masterVolume changes
 
+  // Separate effect for masterVolume changes to avoid re-creating node if only volume changes
   useEffect(() => {
-    if (masterVolumeNodeRef.current) {
+    if (masterVolumeNodeRef.current && audioContextStarted) {
       masterVolumeNodeRef.current.volume.rampTo(Tone.gainToDb(masterVolume), 0.05);
     }
-  }, [masterVolume]);
+  }, [masterVolume, audioContextStarted]);
+
 
   const handleMasterVolumeChange = useCallback((newVolume: number) => {
     setMasterVolume(Math.max(0, Math.min(1, newVolume))); 
@@ -158,7 +185,7 @@ export default function MusicSyncPage() {
 
   const handleSelectChannel = useCallback((channelId: string) => {
     setSelectedChannelId(channelId);
-    setSelectedBlockId(null); // Deselect block when changing channel
+    setSelectedBlockId(null); 
   }, []);
   
   const handleUpdateChannel = useCallback((channelId: string, updates: Partial<Pick<Channel, 'name' | 'volume' | 'isMuted'>>) => {
@@ -167,11 +194,12 @@ export default function MusicSyncPage() {
         ch.id === channelId ? { ...ch, ...updates } : ch
       )
     );
+    const channelName = channels.find(c=>c.id===channelId)?.name || 'Channel';
     if (updates.volume !== undefined) {
-        toast({ title: "Channel Volume Changed", description: `${channels.find(c=>c.id===channelId)?.name} volume to ${Math.round(updates.volume * 100)}%` });
+        toast({ title: "Channel Volume Changed", description: `${channelName} volume to ${Math.round(updates.volume * 100)}%` });
     }
     if (updates.isMuted !== undefined) {
-        toast({ title: `Channel ${updates.isMuted ? "Muted" : "Unmuted"}`, description: `${channels.find(c=>c.id===channelId)?.name} is now ${updates.isMuted ? "muted" : "unmuted"}.` });
+        toast({ title: `Channel ${updates.isMuted ? "Muted" : "Unmuted"}`, description: `${channelName} is now ${updates.isMuted ? "muted" : "unmuted"}.` });
     }
   }, [toast, channels]);
 
@@ -221,7 +249,7 @@ export default function MusicSyncPage() {
   }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
   
   const handleSelectBlock = useCallback((channelId: string, blockId: string) => {
-    setSelectedChannelId(channelId); // Ensure correct channel is selected
+    setSelectedChannelId(channelId); 
     setSelectedBlockId(blockId);
   }, []);
 
@@ -232,18 +260,23 @@ export default function MusicSyncPage() {
       if (ch.id === selectedChannelId) {
         const updatedBlocks = ch.audioBlocks.map(b => {
           if (b.id === updatedBlockData.id) {
-            if (!updatedBlockData.isSilent && !b.isSilent) {
+            if (!updatedBlockData.isSilent && !b.isSilent) { // Audible block specific updates
               let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
               const oldAudible = b as AudibleAudioBlock;
+              
+              // If duration changed significantly, try to scale ADSR times proportionally from their *previous* values
+              // before applying adjustADSR, to maintain general shape.
               if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0) {
                 const durationRatio = newAudible.duration / oldAudible.duration;
+                // Only apply ratio if the ADSR param hasn't been explicitly changed by the user in this update
                 if (newAudible.attack === oldAudible.attack) newAudible.attack = oldAudible.attack * durationRatio;
                 if (newAudible.decay === oldAudible.decay) newAudible.decay = oldAudible.decay * durationRatio;
                 if (newAudible.release === oldAudible.release) newAudible.release = oldAudible.release * durationRatio;
+                // SustainLevel is a level, not time, so it doesn't scale with duration.
               }
               return adjustADSR(newAudible);
             }
-            return updatedBlockData;
+            return updatedBlockData; // For silent blocks or type changes
           }
           return b;
         });
@@ -262,9 +295,11 @@ export default function MusicSyncPage() {
       }
       return ch;
     }));
-    setSelectedBlockId(null); 
+    if (selectedBlockId === blockIdToDelete) {
+        setSelectedBlockId(null); 
+    }
     toast({ title: "Block Deleted", description: `Block removed from ${selectedChannel?.name}.`, variant: "destructive" });
-  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
+  }, [selectedChannelId, selectedBlockId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
 
   useEffect(() => { if (!isInitialMount.current.looping) { if (toast && typeof isLooping === 'boolean') { toast({ title: isLooping ? "Loop Enabled" : "Loop Disabled", description: isLooping ? "Playback will now loop." : "Playback will not loop." }); } } else { isInitialMount.current.looping = false; } }, [isLooping, toast]);
   useEffect(() => { if (!isInitialMount.current.outputMode) { if (toast) { toast({ title: "Output Mode Changed", description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.` }); } } else { isInitialMount.current.outputMode = false; } }, [outputMode, toast]);
@@ -293,17 +328,22 @@ export default function MusicSyncPage() {
 
   const handlePlay = useCallback(async () => {
     if (!audioContextStarted) await startAudioContext();
-    if (Tone.context.state !== 'running') await Tone.start();
+    if (Tone.context.state !== 'running') await Tone.start(); // Ensure context is running (esp. for user gesture)
+    
     if (!masterVolumeNodeRef.current) {
-      if (audioContextStarted) masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
-      else { toast({ title: "Audio Error", description: "Master volume node not ready.", variant: "destructive"}); return; }
+      if (audioContextStarted) { // Re-check, startAudioContext might have set it up.
+        masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
+      } else {
+         toast({ title: "Audio Error", description: "Master volume node not ready.", variant: "destructive"}); 
+         return; 
+      }
     }
     if (channels.every(ch => ch.audioBlocks.length === 0)) {
       toast({ title: "Cannot Play", description: "Add some audio blocks to at least one channel!", variant: "destructive" });
       return;
     }
 
-    Tone.Transport.cancel();
+    Tone.Transport.cancel(); // Clear previous transport events
     activeAudioNodesMap.current.forEach(channelNodes => {
       channelNodes.forEach(nodes => {
         nodes.osc.dispose();
@@ -325,11 +365,15 @@ export default function MusicSyncPage() {
         const audibleBlock = block as AudibleAudioBlock;
         const osc = new Tone.Oscillator({
           type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6, // Initial volume before ADSR
-        }).start(audibleBlock.startTime);
-        osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1);
-
+        });
+        
         const adsrGain = new Tone.Gain(0).connect(channelVolumeNode);
         osc.connect(adsrGain);
+        
+        // Schedule start/stop for oscillator
+        osc.start(audibleBlock.startTime);
+        osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); // Stop slightly after ADSR completes
+
         channelSpecificNodes.push({ osc, adsrGain, channelVolumeNode });
 
         const { startTime, duration, attack, decay, sustainLevel, release } = audibleBlock;
@@ -338,31 +382,17 @@ export default function MusicSyncPage() {
         const releaseStartTime = startTime + duration - release;
         const effectiveEndTime = startTime + duration;
 
+        // ADSR Scheduling
         adsrGain.gain.setValueAtTime(0, startTime);
-        adsrGain.gain.linearRampToValueAtTime(1, attackEndTime);
-        
-        const sustainPhaseStartTime = decayEndTime;
-        const sustainPhaseEndTime = releaseStartTime;
+        adsrGain.gain.linearRampToValueAtTime(1, attackEndTime); // Attack
+        adsrGain.gain.linearRampToValueAtTime(sustainLevel, decayEndTime); // Decay
 
-        if (sustainPhaseStartTime < sustainPhaseEndTime) {
-          adsrGain.gain.linearRampToValueAtTime(sustainLevel, sustainPhaseStartTime);
-          if (sustainPhaseEndTime > sustainPhaseStartTime) {
-            adsrGain.gain.setValueAtTime(sustainLevel, sustainPhaseEndTime);
-          }
-          adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
-        } else {
-          const actualDecayOrTransitionTime = Math.min(decayEndTime, releaseStartTime);
-          adsrGain.gain.linearRampToValueAtTime(sustainLevel, actualDecayOrTransitionTime);
-          if (releaseStartTime >= startTime && releaseStartTime < effectiveEndTime) {
-            const valueAtReleaseStart = adsrGain.gain.getValueAtTime(releaseStartTime);
-            adsrGain.gain.setValueAtTime(valueAtReleaseStart, releaseStartTime);
-            adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
-          } else if (releaseStartTime >= effectiveEndTime) {
-            adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
-          } else {
-            adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime);
-          }
+        if (releaseStartTime > decayEndTime) { // If there's a sustain phase
+          adsrGain.gain.setValueAtTime(sustainLevel, releaseStartTime); // Hold sustain
         }
+        // Else, decay ramp might go through sustain directly to release point
+
+        adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime); // Release
       });
       activeAudioNodesMap.current.set(channel.id, channelSpecificNodes);
     });
@@ -378,10 +408,10 @@ export default function MusicSyncPage() {
       if (longestChannelDuration > 0) {
         Tone.Transport.scheduleOnce(() => {
           setIsPlaying(false);
-          setCurrentPlayTime(0);
-          Tone.Transport.position = 0;
-        }, longestChannelDuration + 0.01);
-      } else { // No blocks to play, effectively stop immediately
+          setCurrentPlayTime(0); // Reset playhead on natural stop
+          Tone.Transport.position = 0; // Reset transport position
+        }, longestChannelDuration + 0.1); // Use a slightly larger buffer
+      } else {
          setIsPlaying(false);
          setCurrentPlayTime(0);
          Tone.Transport.position = 0;
@@ -390,7 +420,7 @@ export default function MusicSyncPage() {
 
     Tone.Transport.start();
     setIsPlaying(true);
-  }, [audioContextStarted, startAudioContext, toast, isLooping, masterVolume, channels, setCurrentPlayTime]);
+  }, [audioContextStarted, startAudioContext, toast, isLooping, masterVolume, channels, setCurrentPlayTime, outputMode]);
 
 
   const handleStop = useCallback(() => {
@@ -401,13 +431,13 @@ export default function MusicSyncPage() {
       channelNodes.forEach(nodes => {
         nodes.osc.dispose();
         nodes.adsrGain.dispose();
-        nodes.channelVolumeNode.dispose(); // Dispose channel-specific volume node
+        nodes.channelVolumeNode.dispose(); 
       });
     });
     activeAudioNodesMap.current.clear();
     setIsPlaying(false);
-    setCurrentPlayTime(0);
-    Tone.Transport.position = 0;
+    setCurrentPlayTime(0); // Reset playhead on stop
+    Tone.Transport.position = 0; // Reset transport position
   }, []);
 
   useEffect(() => {
@@ -424,7 +454,7 @@ export default function MusicSyncPage() {
     return () => { if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current); };
   }, [isPlaying]);
 
-  useEffect(() => { // Global cleanup on unmount
+  useEffect(() => { 
     return () => {
       Tone.Transport.stop();
       Tone.Transport.cancel();
@@ -438,6 +468,7 @@ export default function MusicSyncPage() {
       });
       activeAudioNodesMap.current.clear();
       masterVolumeNodeRef.current?.dispose();
+      masterVolumeNodeRef.current = null;
     };
   }, []);
   
@@ -486,8 +517,8 @@ export default function MusicSyncPage() {
                   onUpdateChannel={handleUpdateChannel}
                   onSelectBlock={handleSelectBlock}
                   pixelsPerSecond={PIXELS_PER_SECOND}
-                  currentPlayTime={currentPlayTime}
-                  isPlaying={isPlaying}
+                  currentPlayTime={currentPlayTime} // Not directly used for indicator here, but good for context
+                  isPlaying={isPlaying} // Same as above
                 />
               ))}
               <Button onClick={handleAddChannel} variant="outline" className="mt-4 w-full">
@@ -497,18 +528,18 @@ export default function MusicSyncPage() {
                 <PlaybackIndicatorComponent
                   position={currentPlayTime * PIXELS_PER_SECOND}
                   isVisible={isPlaying}
-                  containerHeight={channels.length * 144} // Approximate height per channel row + spacing
+                  containerHeight={channels.reduce((acc, _ch, idx) => acc + (idx > 0 ? 8 : 0) + 128, 0)} // Sum of channel heights + spacing
                 />
               )}
             </div>
             
             <PropertyPanelComponent
               className="w-full md:w-1/3 md:max-w-sm"
-              selectedBlock={selectedBlock} // Pass the actual selected block object
+              selectedBlock={selectedBlock} 
               onUpdateBlock={handleUpdateBlock}
               onDeleteBlock={handleDeleteBlock}
               pixelsPerSecond={PIXELS_PER_SECOND}
-              key={selectedBlock?.id} // Re-render if selected block changes
+              key={selectedBlock?.id} 
             />
           </div>
         </div>
