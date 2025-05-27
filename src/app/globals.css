@@ -2,38 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: Arial, Helvetica, sans-serif;
-}
-
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
+    --background: 220 20% 97%; /* Very light cool gray */
+    --foreground: 255 15% 30%; /* Soft dark desaturated blue */
+
+    --card: 0 0% 100%; /* White */
+    --card-foreground: 255 15% 30%; /* Soft dark desaturated blue */
+
+    --popover: 0 0% 100%; /* White */
+    --popover-foreground: 255 15% 30%; /* Soft dark desaturated blue */
+
+    --primary: 335 70% 80%; /* Soft Pink */
+    --primary-foreground: 335 50% 25%; /* Darker Pink for text on primary */
+
+    --secondary: 210 70% 80%; /* Soft Blue */
+    --secondary-foreground: 210 50% 25%; /* Darker Blue for text on secondary */
+
+    --muted: 220 20% 92%; /* Lighter cool gray for muted backgrounds */
+    --muted-foreground: 255 15% 50%; /* Lighter soft dark blue for muted text */
+
+    --accent: 260 70% 80%; /* Soft Purple */
+    --accent-foreground: 260 50% 25%; /* Darker Purple for text on accent */
+
+    --destructive: 0 70% 65%; /* Softer Red */
+    --destructive-foreground: 0 0% 100%; /* White for text on destructive */
+
+    --border: 220 20% 90%; /* Light cool gray border */
+    --input: 220 20% 95%; /* Lighter cool gray input background */
+    --ring: 260 70% 80%; /* Soft Purple for focus rings */
+
+    --radius: 0.75rem; /* More rounded corners */
+
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
+
+    --sidebar-background: 220 20% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
     --sidebar-primary-foreground: 0 0% 98%;
@@ -42,31 +49,42 @@ body {
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --card: 0 0% 3.9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 0 0% 3.9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
+    --background: 255 15% 15%; /* Dark desaturated blue */
+    --foreground: 220 20% 90%; /* Light cool gray for text */
+
+    --card: 255 15% 20%; /* Darker desaturated blue */
+    --card-foreground: 220 20% 90%;
+
+    --popover: 255 15% 15%;
+    --popover-foreground: 220 20% 90%;
+
+    --primary: 335 60% 60%; /* Darker Pink */
+    --primary-foreground: 335 70% 95%; /* Lighter Pink for text */
+
+    --secondary: 210 60% 60%; /* Darker Blue */
+    --secondary-foreground: 210 70% 95%; /* Lighter Blue for text */
+
+    --muted: 255 15% 25%;
+    --muted-foreground: 220 20% 70%;
+
+    --accent: 260 60% 60%; /* Darker Purple */
+    --accent-foreground: 260 70% 95%; /* Lighter Purple for text */
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 255 15% 30%;
+    --input: 255 15% 28%;
+    --ring: 260 60% 60%; /* Darker Purple */
+
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
     --sidebar-primary: 224.3 76.3% 48%;
@@ -84,5 +102,11 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+    /* Geist font variables are applied in layout.tsx */
   }
+}
+
+/* Custom gradient text utility */
+.text-gradient-primary-accent-secondary {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-accent to-secondary;
 }
