@@ -93,7 +93,7 @@ type ActiveChannelAudioNodes = {
 };
 
 export default function MusicSyncPage() {
-  const { audioContextStarted, startAudioContext } = useToneContext();
+  const { audioContextStarted, startAudioContext: activateAudio } = useToneContext();
   const { toast } = useToast();
 
   const initialChannel: Channel = {
@@ -108,6 +108,7 @@ export default function MusicSyncPage() {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isActivatingAudio, setIsActivatingAudio] = useState(false);
   const [currentPlayTime, setCurrentPlayTime] = useState(0); 
   const [isLooping, setIsLooping] = useState(false);
   const [outputMode, setOutputMode] = useState<'mixed' | 'independent'>('mixed');
@@ -117,7 +118,8 @@ export default function MusicSyncPage() {
   const animationFrameId = useRef<number | null>(null);
   const masterVolumeNodeRef = useRef<Tone.Volume | null>(null);
   
-  const isInitialMount = useRef({ looping: true, outputMode: true, masterVolume: true });
+  const isInitialMount = useRef({ looping: true, outputMode: true, masterVolume: true, channelVolume: true });
+
 
   const selectedChannel = channels.find(ch => ch.id === selectedChannelId) || null;
   const selectedBlock = selectedChannel?.audioBlocks.find(block => block.id === selectedBlockId) || null;
@@ -136,6 +138,29 @@ export default function MusicSyncPage() {
     }
   }, [masterVolume, audioContextStarted]);
 
+  const ensureAudioIsActive = useCallback(async (): Promise<boolean> => {
+    if (Tone.context.state === 'running' && audioContextStarted) {
+      return true;
+    }
+    
+    setIsActivatingAudio(true);
+    try {
+      await activateAudio(); // From ToneProvider, calls Tone.start()
+      if (Tone.context.state === 'running') {
+        return true;
+      } else {
+        // Toast for failure might be in activateAudio, but this is a fallback.
+        toast({ title: "Audio Activation Failed", description: "Could not enable audio. Please interact with the page again or check browser permissions.", variant: "destructive" });
+        return false;
+      }
+    } catch (error) {
+      toast({ title: "Audio Initialization Error", description: String(error), variant: "destructive" });
+      return false;
+    } finally {
+      setIsActivatingAudio(false);
+    }
+  }, [activateAudio, audioContextStarted, toast]);
+
 
   const handleMasterVolumeChange = useCallback((newVolume: number) => {
     setMasterVolume(Math.max(0, Math.min(1, newVolume))); 
@@ -150,7 +175,9 @@ export default function MusicSyncPage() {
     });
   }, []);
 
-  const handleAddChannel = useCallback(() => {
+  const handleAddChannel = useCallback(async () => {
+    if (!(await ensureAudioIsActive())) return;
+
     const newChannelId = crypto.randomUUID();
     const newChannel: Channel = {
       id: newChannelId,
@@ -162,7 +189,7 @@ export default function MusicSyncPage() {
     setChannels(prev => [...prev, newChannel]);
     setSelectedChannelId(newChannelId);
     toast({ title: "Channel Added", description: `New ${newChannel.name} created.` });
-  }, [channels.length, toast]);
+  }, [channels.length, toast, ensureAudioIsActive]);
 
   const handleSelectChannel = useCallback((channelId: string) => {
     setSelectedChannelId(channelId);
@@ -176,10 +203,12 @@ export default function MusicSyncPage() {
       )
     );
     const channelName = channels.find(c=>c.id===channelId)?.name || 'Channel';
-    // Check if isInitialMount.current.masterVolume to avoid toast on initial load for channel volume
-    if (updates.volume !== undefined && !isInitialMount.current.masterVolume) { 
+    if (updates.volume !== undefined && !isInitialMount.current.channelVolume) { 
         toast({ title: "Channel Volume Changed", description: `${channelName} volume to ${Math.round(updates.volume * 100)}%` });
+    } else if (updates.volume !== undefined && isInitialMount.current.channelVolume) {
+        isInitialMount.current.channelVolume = false; // Reset after first potential update for all channels
     }
+
     if (updates.isMuted !== undefined) {
         toast({ title: `Channel ${updates.isMuted ? "Muted" : "Unmuted"}`, description: `${channelName} is now ${updates.isMuted ? "muted" : "unmuted"}.` });
     }
@@ -187,13 +216,8 @@ export default function MusicSyncPage() {
 
 
   const handleAddBlock = useCallback(async () => {
-    if (Tone.context.state !== 'running') {
-        await startAudioContext();
-        if (Tone.context.state !== 'running') {
-            toast({ title: "Audio Activation Failed", description: "Could not activate audio. Please try interacting with the page.", variant: "destructive" });
-            return;
-        }
-    }
+    if (!(await ensureAudioIsActive())) return;
+
     if (!selectedChannelId) {
       toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
       return;
@@ -216,16 +240,11 @@ export default function MusicSyncPage() {
     }));
     setSelectedBlockId(newBlockId);
     toast({ title: "Audio Block Added", description: `Block added to ${selectedChannel?.name}.` });
-  }, [audioContextStarted, selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
+  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, ensureAudioIsActive]);
 
   const handleAddSilenceBlock = useCallback(async () => {
-    if (Tone.context.state !== 'running') {
-        await startAudioContext();
-        if (Tone.context.state !== 'running') {
-            toast({ title: "Audio Activation Failed", description: "Could not activate audio. Please try interacting with the page.", variant: "destructive" });
-            return;
-        }
-    }
+    if (!(await ensureAudioIsActive())) return;
+    
     if (!selectedChannelId) {
       toast({ title: "No Channel Selected", description: "Please select a channel first.", variant: "destructive" });
       return;
@@ -242,7 +261,7 @@ export default function MusicSyncPage() {
     }));
     setSelectedBlockId(newBlockId);
     toast({ title: "Silence Block Added", description: `Silence added to ${selectedChannel?.name}.` });
-  }, [audioContextStarted, selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, startAudioContext]);
+  }, [selectedChannelId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast, ensureAudioIsActive]);
   
   const handleSelectBlock = useCallback((channelId: string, blockId: string) => {
     setSelectedChannelId(channelId); 
@@ -320,16 +339,7 @@ export default function MusicSyncPage() {
   }, []);
 
   const handlePlay = useCallback(async () => {
-    if (Tone.context.state !== 'running') {
-      await startAudioContext();
-      if (Tone.context.state !== 'running') { 
-        await Tone.start(); // One more direct attempt
-        if (Tone.context.state !== 'running') {
-            toast({ title: "Audio Context Error", description: "Could not activate audio. Please interact with the page and try again.", variant: "destructive" });
-            return;
-        }
-      }
-    }
+    if (!(await ensureAudioIsActive())) return;
     
     if (!masterVolumeNodeRef.current) {
       console.log("Debug: Master volume node was not ready during play attempt.");
@@ -439,7 +449,7 @@ export default function MusicSyncPage() {
 
     Tone.Transport.start("+0.1"); 
     setIsPlaying(true);
-  }, [audioContextStarted, startAudioContext, toast, isLooping, masterVolume, channels, outputMode, recalculateChannelBlockStartTimes, currentPlayTime]);
+  }, [audioContextStarted, toast, isLooping, masterVolume, channels, outputMode, recalculateChannelBlockStartTimes, ensureAudioIsActive, currentPlayTime]);
 
 
   const handleStop = useCallback(() => {
@@ -503,6 +513,7 @@ export default function MusicSyncPage() {
           <ControlsComponent
             isPlaying={isPlaying}
             isLooping={isLooping}
+            isActivatingAudio={isActivatingAudio}
             outputMode={outputMode}
             masterVolume={masterVolume}
             onPlay={handlePlay}
@@ -512,7 +523,7 @@ export default function MusicSyncPage() {
             onToggleLoop={handleToggleLoop}
             onToggleOutputMode={handleToggleOutputMode}
             onMasterVolumeChange={handleMasterVolumeChange}
-            canPlay={channels.some(ch => ch.audioBlocks.length > 0)}
+            canPlay={channels.some(ch => ch.audioBlocks.length > 0 && ch.audioBlocks.some(b => !b.isSilent && b.duration > 0))}
             disableAddBlock={!selectedChannelId}
           />
 
