@@ -30,25 +30,20 @@ const calculateADSRDefaults = (duration: number): Pick<AudibleAudioBlock, 'attac
 const adjustADSR = (block: AudibleAudioBlock): AudibleAudioBlock => {
   let { duration, attack, decay, sustainLevel, release } = block;
 
-  // Basic sanity checks and clamping
   attack = Math.max(0, attack);
   decay = Math.max(0, decay);
   release = Math.max(0, release);
   sustainLevel = Math.max(0, Math.min(sustainLevel, 1));
 
-  // Ensure individual ADSR components do not exceed duration
   attack = Math.min(attack, duration);
   decay = Math.min(decay, duration);
   release = Math.min(release, duration);
   
   let adrSum = attack + decay + release;
 
-  // If duration is very small or zero, zero out ADSR times
   if (duration <= 0) {
     attack = 0; decay = 0; release = 0; adrSum = 0;
   } else {
-    // Scale A, D, R if their sum exceeds available time for them
-    // Available time for A+D+R is duration minus minimum sustain time
     const maxAllowedAdrSum = Math.max(0, duration - MIN_SUSTAIN_TIME);
 
     if (adrSum > maxAllowedAdrSum) {
@@ -57,15 +52,14 @@ const adjustADSR = (block: AudibleAudioBlock): AudibleAudioBlock => {
         attack *= scale;
         decay *= scale;
         release *= scale;
-      } else { // Not enough time even for MIN_SUSTAIN_TIME, so ADSR becomes minimal
+      } else { 
         attack = 0;
         decay = 0;
-        // Try to preserve release if possible, or set it to duration if everything else is 0
         release = Math.min(release, duration); 
-        if (duration > 0 && release === 0 && maxAllowedAdrSum <=0) { // if duration must be only sustain
-             // this case implies duration <= MIN_SUSTAIN_TIME. A,D,R must be 0.
-        } else if (duration > 0 && maxAllowedAdrSum <=0) { // duration is less than min_sustain_time
-            release = duration; // make it a quick fade out for the entire duration
+        if (duration > 0 && release === 0 && maxAllowedAdrSum <=0) {
+           // duration <= MIN_SUSTAIN_TIME. A,D,R must be 0.
+        } else if (duration > 0 && maxAllowedAdrSum <=0) { 
+            release = duration; 
         } else {
             release = 0;
         }
@@ -73,15 +67,13 @@ const adjustADSR = (block: AudibleAudioBlock): AudibleAudioBlock => {
     }
   }
   
-  // Final check: if duration is extremely small, ADR sum might still exceed it.
-  adrSum = attack + decay + release;
+  adrSum = attack + decay + release; // Recalculate after potential scaling
   if (adrSum > duration && duration > 0) {
     const scale = duration / adrSum;
     attack *= scale;
     decay *= scale;
     release *= scale;
   }
-
 
   const fixNum = (val: number, precision: number = 3) => parseFloat(val.toFixed(precision));
 
@@ -125,32 +117,27 @@ export default function MusicSyncPage() {
   const animationFrameId = useRef<number | null>(null);
   const masterVolumeNodeRef = useRef<Tone.Volume | null>(null);
   
-  const isInitialMount = useRef({ looping: true, outputMode: true, volume: true });
+  const isInitialMount = useRef({ looping: true, outputMode: true, masterVolume: true });
 
   const selectedChannel = channels.find(ch => ch.id === selectedChannelId) || null;
   const selectedBlock = selectedChannel?.audioBlocks.find(block => block.id === selectedBlockId) || null;
 
+  // Effect to create/update the master volume node
   useEffect(() => {
     if (audioContextStarted) {
       if (!masterVolumeNodeRef.current) {
+        // console.log("Creating master volume node. Initial masterVolume:", masterVolume);
         masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
-      } else {
-        // If already created, just update volume (e.g. on initial masterVolume state change)
-         masterVolumeNodeRef.current.volume.rampTo(Tone.gainToDb(masterVolume), 0.05);
       }
+      // Volume updates are handled by the next useEffect
     }
-    // Cleanup on unmount or if audioContextStarted becomes false (though unlikely)
-    return () => {
-      if (masterVolumeNodeRef.current && !audioContextStarted) {
-         masterVolumeNodeRef.current?.dispose();
-         masterVolumeNodeRef.current = null;
-      }
-    };
-  }, [audioContextStarted, masterVolume]); // Rerun if audioContextStarted or masterVolume changes
+    // No cleanup here; master node is disposed on component unmount
+  }, [audioContextStarted, masterVolume]); // masterVolume needed here if it influences initial creation db level
 
-  // Separate effect for masterVolume changes to avoid re-creating node if only volume changes
+  // Effect to update master volume when the masterVolume state changes
   useEffect(() => {
     if (masterVolumeNodeRef.current && audioContextStarted) {
+      // console.log("Ramping master volume to:", masterVolume, Tone.gainToDb(masterVolume));
       masterVolumeNodeRef.current.volume.rampTo(Tone.gainToDb(masterVolume), 0.05);
     }
   }, [masterVolume, audioContextStarted]);
@@ -195,7 +182,7 @@ export default function MusicSyncPage() {
       )
     );
     const channelName = channels.find(c=>c.id===channelId)?.name || 'Channel';
-    if (updates.volume !== undefined) {
+    if (updates.volume !== undefined && !isInitialMount.current.masterVolume) { // Prevent toast on initial mount for volume
         toast({ title: "Channel Volume Changed", description: `${channelName} volume to ${Math.round(updates.volume * 100)}%` });
     }
     if (updates.isMuted !== undefined) {
@@ -260,23 +247,19 @@ export default function MusicSyncPage() {
       if (ch.id === selectedChannelId) {
         const updatedBlocks = ch.audioBlocks.map(b => {
           if (b.id === updatedBlockData.id) {
-            if (!updatedBlockData.isSilent && !b.isSilent) { // Audible block specific updates
+            if (!updatedBlockData.isSilent && !b.isSilent) { 
               let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
               const oldAudible = b as AudibleAudioBlock;
               
-              // If duration changed significantly, try to scale ADSR times proportionally from their *previous* values
-              // before applying adjustADSR, to maintain general shape.
               if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0) {
                 const durationRatio = newAudible.duration / oldAudible.duration;
-                // Only apply ratio if the ADSR param hasn't been explicitly changed by the user in this update
                 if (newAudible.attack === oldAudible.attack) newAudible.attack = oldAudible.attack * durationRatio;
                 if (newAudible.decay === oldAudible.decay) newAudible.decay = oldAudible.decay * durationRatio;
                 if (newAudible.release === oldAudible.release) newAudible.release = oldAudible.release * durationRatio;
-                // SustainLevel is a level, not time, so it doesn't scale with duration.
               }
               return adjustADSR(newAudible);
             }
-            return updatedBlockData; // For silent blocks or type changes
+            return updatedBlockData; 
           }
           return b;
         });
@@ -303,7 +286,8 @@ export default function MusicSyncPage() {
 
   useEffect(() => { if (!isInitialMount.current.looping) { if (toast && typeof isLooping === 'boolean') { toast({ title: isLooping ? "Loop Enabled" : "Loop Disabled", description: isLooping ? "Playback will now loop." : "Playback will not loop." }); } } else { isInitialMount.current.looping = false; } }, [isLooping, toast]);
   useEffect(() => { if (!isInitialMount.current.outputMode) { if (toast) { toast({ title: "Output Mode Changed", description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.` }); } } else { isInitialMount.current.outputMode = false; } }, [outputMode, toast]);
-  useEffect(() => { if (!isInitialMount.current.volume) { if (toast) { toast({ title: "Master Volume Changed", description: `Volume set to ${Math.round(masterVolume * 100)}%` }); } } else { isInitialMount.current.volume = false; } }, [masterVolume, toast]);
+  useEffect(() => { if (!isInitialMount.current.masterVolume) { if (toast) { toast({ title: "Master Volume Changed", description: `Volume set to ${Math.round(masterVolume * 100)}%` }); } } else { isInitialMount.current.masterVolume = false; } }, [masterVolume, toast]);
+
 
   const handleToggleLoop = useCallback(() => {
     setIsLooping(prev => {
@@ -328,22 +312,23 @@ export default function MusicSyncPage() {
 
   const handlePlay = useCallback(async () => {
     if (!audioContextStarted) await startAudioContext();
-    if (Tone.context.state !== 'running') await Tone.start(); // Ensure context is running (esp. for user gesture)
+    if (Tone.context.state !== 'running') await Tone.start();
     
     if (!masterVolumeNodeRef.current) {
-      if (audioContextStarted) { // Re-check, startAudioContext might have set it up.
-        masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
-      } else {
-         toast({ title: "Audio Error", description: "Master volume node not ready.", variant: "destructive"}); 
-         return; 
-      }
+      // This console.log will help debug if the master node isn't ready
+      console.log("Debug: Master volume node was not ready during play attempt.");
+      toast({ title: "Audio Error", description: "Master volume node not ready. Please try again.", variant: "destructive"}); 
+      return; 
     }
     if (channels.every(ch => ch.audioBlocks.length === 0)) {
       toast({ title: "Cannot Play", description: "Add some audio blocks to at least one channel!", variant: "destructive" });
       return;
     }
 
+    Tone.Transport.stop(); // Stop any existing playback
     Tone.Transport.cancel(); // Clear previous transport events
+    Tone.Transport.position = 0; // Reset transport to the beginning
+
     activeAudioNodesMap.current.forEach(channelNodes => {
       channelNodes.forEach(nodes => {
         nodes.osc.dispose();
@@ -357,22 +342,23 @@ export default function MusicSyncPage() {
       if (channel.isMuted || channel.audioBlocks.length === 0) return;
 
       const channelSpecificNodes: ActiveChannelAudioNodes[] = [];
-      const channelVolumeNode = new Tone.Volume(Tone.gainToDb(channel.volume)).connect(masterVolumeNodeRef.current!);
+      // Ensure channel volume is applied correctly, considering 0 volume as mute (-Infinity dB)
+      const channelVolDb = channel.volume > 0 ? Tone.gainToDb(channel.volume) : -Infinity;
+      const channelVolumeNode = new Tone.Volume(channelVolDb).connect(masterVolumeNodeRef.current!);
       
       channel.audioBlocks.forEach(block => {
         if (block.isSilent) return;
 
         const audibleBlock = block as AudibleAudioBlock;
         const osc = new Tone.Oscillator({
-          type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6, // Initial volume before ADSR
+          type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6, 
         });
         
         const adsrGain = new Tone.Gain(0).connect(channelVolumeNode);
         osc.connect(adsrGain);
         
-        // Schedule start/stop for oscillator
         osc.start(audibleBlock.startTime);
-        osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); // Stop slightly after ADSR completes
+        osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); 
 
         channelSpecificNodes.push({ osc, adsrGain, channelVolumeNode });
 
@@ -382,19 +368,19 @@ export default function MusicSyncPage() {
         const releaseStartTime = startTime + duration - release;
         const effectiveEndTime = startTime + duration;
 
-        // ADSR Scheduling
         adsrGain.gain.setValueAtTime(0, startTime);
-        adsrGain.gain.linearRampToValueAtTime(1, attackEndTime); // Attack
-        adsrGain.gain.linearRampToValueAtTime(sustainLevel, decayEndTime); // Decay
+        adsrGain.gain.linearRampToValueAtTime(1, attackEndTime); 
+        adsrGain.gain.linearRampToValueAtTime(sustainLevel, decayEndTime); 
 
-        if (releaseStartTime > decayEndTime) { // If there's a sustain phase
-          adsrGain.gain.setValueAtTime(sustainLevel, releaseStartTime); // Hold sustain
+        if (releaseStartTime > decayEndTime) { 
+          adsrGain.gain.setValueAtTime(sustainLevel, releaseStartTime); 
         }
-        // Else, decay ramp might go through sustain directly to release point
-
-        adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime); // Release
+        
+        adsrGain.gain.linearRampToValueAtTime(0, effectiveEndTime); 
       });
-      activeAudioNodesMap.current.set(channel.id, channelSpecificNodes);
+      if (channelSpecificNodes.length > 0) {
+        activeAudioNodesMap.current.set(channel.id, channelSpecificNodes);
+      }
     });
 
     const longestChannelDuration = Math.max(0, ...channels.map(ch => ch.audioBlocks.reduce((sum, b) => sum + b.duration, 0)));
@@ -408,9 +394,9 @@ export default function MusicSyncPage() {
       if (longestChannelDuration > 0) {
         Tone.Transport.scheduleOnce(() => {
           setIsPlaying(false);
-          setCurrentPlayTime(0); // Reset playhead on natural stop
-          Tone.Transport.position = 0; // Reset transport position
-        }, longestChannelDuration + 0.1); // Use a slightly larger buffer
+          setCurrentPlayTime(0); 
+          Tone.Transport.position = 0; 
+        }, longestChannelDuration + 0.2); // Slightly increased buffer
       } else {
          setIsPlaying(false);
          setCurrentPlayTime(0);
@@ -418,9 +404,9 @@ export default function MusicSyncPage() {
       }
     }
 
-    Tone.Transport.start();
+    Tone.Transport.start("+0.1"); // Start with a slight delay to ensure all scheduling is processed
     setIsPlaying(true);
-  }, [audioContextStarted, startAudioContext, toast, isLooping, masterVolume, channels, setCurrentPlayTime, outputMode]);
+  }, [audioContextStarted, startAudioContext, toast, isLooping, masterVolume, channels, outputMode, recalculateChannelBlockStartTimes]);
 
 
   const handleStop = useCallback(() => {
@@ -436,8 +422,8 @@ export default function MusicSyncPage() {
     });
     activeAudioNodesMap.current.clear();
     setIsPlaying(false);
-    setCurrentPlayTime(0); // Reset playhead on stop
-    Tone.Transport.position = 0; // Reset transport position
+    setCurrentPlayTime(0); 
+    Tone.Transport.position = 0; 
   }, []);
 
   useEffect(() => {
@@ -456,21 +442,14 @@ export default function MusicSyncPage() {
 
   useEffect(() => { 
     return () => {
-      Tone.Transport.stop();
-      Tone.Transport.cancel();
-      Tone.Transport.loop = false;
-      activeAudioNodesMap.current.forEach(channelNodes => {
-        channelNodes.forEach(nodes => {
-          nodes.osc.dispose();
-          nodes.adsrGain.dispose();
-          nodes.channelVolumeNode.dispose();
-        });
-      });
-      activeAudioNodesMap.current.clear();
-      masterVolumeNodeRef.current?.dispose();
-      masterVolumeNodeRef.current = null;
+      handleStop(); // Ensure everything is stopped and cleaned up on unmount
+      if (masterVolumeNodeRef.current) {
+        // console.log("Disposing master volume node on component unmount.");
+        masterVolumeNodeRef.current.dispose();
+        masterVolumeNodeRef.current = null;
+      }
     };
-  }, []);
+  }, [handleStop]);
   
   const totalTimelineWidth = Math.max(300, ...channels.map(ch => ch.audioBlocks.reduce((sum, block) => sum + block.duration * PIXELS_PER_SECOND, 0) + PIXELS_PER_SECOND));
 
@@ -517,8 +496,8 @@ export default function MusicSyncPage() {
                   onUpdateChannel={handleUpdateChannel}
                   onSelectBlock={handleSelectBlock}
                   pixelsPerSecond={PIXELS_PER_SECOND}
-                  currentPlayTime={currentPlayTime} // Not directly used for indicator here, but good for context
-                  isPlaying={isPlaying} // Same as above
+                  currentPlayTime={currentPlayTime} 
+                  isPlaying={isPlaying} 
                 />
               ))}
               <Button onClick={handleAddChannel} variant="outline" className="mt-4 w-full">
@@ -528,7 +507,7 @@ export default function MusicSyncPage() {
                 <PlaybackIndicatorComponent
                   position={currentPlayTime * PIXELS_PER_SECOND}
                   isVisible={isPlaying}
-                  containerHeight={channels.reduce((acc, _ch, idx) => acc + (idx > 0 ? 8 : 0) + 128, 0)} // Sum of channel heights + spacing
+                  containerHeight={channels.reduce((acc, _ch, idx) => acc + (idx > 0 ? 8 : 0) + 128, 0)} 
                 />
               )}
             </div>
