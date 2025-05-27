@@ -7,13 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input'; // Input is not used, but kept for consistency if needed later
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { MicOffIcon } from 'lucide-react';
+import { MicOffIcon, Trash2Icon } from 'lucide-react';
 
 interface PropertyPanelComponentProps {
   selectedBlock: AudioBlock | null;
   onUpdateBlock: (updatedBlock: AudioBlock) => void;
+  onDeleteBlock: (blockId: string) => void;
   className?: string;
 }
 
@@ -22,6 +23,7 @@ const waveformOptions: WaveformType[] = ['sine', 'triangle', 'square', 'sawtooth
 export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
   selectedBlock,
   onUpdateBlock,
+  onDeleteBlock,
   className,
 }) => {
   if (!selectedBlock) {
@@ -37,6 +39,12 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
       </Card>
     );
   }
+
+  const handleDelete = () => {
+    if (selectedBlock) {
+      onDeleteBlock(selectedBlock.id);
+    }
+  };
 
   // Handle Silent Blocks
   if (selectedBlock.isSilent) {
@@ -64,6 +72,10 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
                 className="mt-2"
               />
             </div>
+            <Button onClick={handleDelete} variant="destructive" className="w-full mt-4">
+              <Trash2Icon className="mr-2 h-4 w-4" />
+              Delete Block
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -136,6 +148,10 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
               className="mt-2"
             />
           </div>
+          <Button onClick={handleDelete} variant="destructive" className="w-full mt-4">
+            <Trash2Icon className="mr-2 h-4 w-4" />
+            Delete Block
+          </Button>
         </div>
       </CardContent>
     </Card>

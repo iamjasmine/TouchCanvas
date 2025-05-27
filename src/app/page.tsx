@@ -79,11 +79,19 @@ export default function MusicSyncPage() {
   const handleUpdateBlock = useCallback((updatedBlockData: AudioBlock) => {
     setAudioBlocks(prevBlocks => {
       const updatedBlocks = prevBlocks.map(b => b.id === updatedBlockData.id ? updatedBlockData : b);
-      // Ensure the updated block is correctly typed before passing to recalculateStartTimes if necessary
-      // For now, recalculateStartTimes handles the generic AudioBlock fine.
       return recalculateStartTimes(updatedBlocks);
     });
   }, [recalculateStartTimes]);
+
+  const handleDeleteBlock = useCallback((blockIdToDelete: string) => {
+    setAudioBlocks(prevBlocks => {
+      const filteredBlocks = prevBlocks.filter(b => b.id !== blockIdToDelete);
+      return recalculateStartTimes(filteredBlocks);
+    });
+    setSelectedBlockId(null); // Deselect the block
+    toast({ title: "Block Deleted", description: "The audio block has been removed.", variant: "destructive" });
+  }, [recalculateStartTimes, toast]);
+
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -243,6 +251,7 @@ export default function MusicSyncPage() {
               className="w-full md:w-1/3 md:max-w-sm"
               selectedBlock={selectedBlock}
               onUpdateBlock={handleUpdateBlock}
+              onDeleteBlock={handleDeleteBlock}
             />
           </div>
         </div>
