@@ -11,6 +11,11 @@ import { TimelineComponent } from '@/components/timeline/timeline-component';
 import { PropertyPanelComponent } from '@/components/property-panel/property-panel.tsx';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarFooter, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
+import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
+import { Button } from '@/components/ui/button';
+import { PlusIcon } from 'lucide-react';
 
 const PIXELS_PER_SECOND = 60; // Defines horizontal scale of timeline
 const MIN_SUSTAIN_TIME = 0.05; // Minimum duration for the sustain phase in seconds
@@ -98,19 +103,16 @@ export default function MusicSyncPage() {
 
   const selectedBlock = audioBlocks.find(block => block.id === selectedBlockId) || null;
 
-  // Initialize master volume node
   useEffect(() => {
     if (audioContextStarted && !masterVolumeNodeRef.current) {
       masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
     }
-    // Cleanup on component unmount
     return () => {
       masterVolumeNodeRef.current?.dispose();
       masterVolumeNodeRef.current = null;
     };
-  }, [audioContextStarted, masterVolume]); // Initial masterVolume is used here
+  }, [audioContextStarted, masterVolume]); 
 
-  // Update Tone.Volume when masterVolume state changes
   useEffect(() => {
     if (masterVolumeNodeRef.current) {
       masterVolumeNodeRef.current.volume.rampTo(Tone.gainToDb(masterVolume), 0.05);
@@ -118,7 +120,7 @@ export default function MusicSyncPage() {
   }, [masterVolume]);
 
   const handleMasterVolumeChange = useCallback((newVolume: number) => {
-    setMasterVolume(Math.max(0, Math.min(1, newVolume))); // Clamp between 0 and 1
+    setMasterVolume(Math.max(0, Math.min(1, newVolume))); 
   }, []);
 
 
@@ -283,8 +285,8 @@ export default function MusicSyncPage() {
     if (Tone.context.state !== 'running') {
       await Tone.start(); 
     }
-    if (!masterVolumeNodeRef.current) { // Ensure master volume node is ready
-        if (audioContextStarted) { // Attempt to initialize if context started but node isn't there
+    if (!masterVolumeNodeRef.current) { 
+        if (audioContextStarted) { 
              masterVolumeNodeRef.current = new Tone.Volume(Tone.gainToDb(masterVolume)).toDestination();
         } else {
             toast({ title: "Audio Error", description: "Master volume node not ready.", variant: "destructive"});
@@ -315,7 +317,6 @@ export default function MusicSyncPage() {
 
       osc.stop(audibleBlock.startTime + audibleBlock.duration + 0.1); 
 
-      // Connect ADSR gain to master volume node
       const gainEnv = new Tone.Gain(0).connect(masterVolumeNodeRef.current!);
       osc.connect(gainEnv);
       activeAudioNodes.current.push({ osc, gainEnv });
@@ -408,7 +409,6 @@ export default function MusicSyncPage() {
   }, [isPlaying]);
 
   useEffect(() => {
-    // General cleanup for Tone.Transport and active nodes on unmount
     return () => {
       Tone.Transport.stop();
       Tone.Transport.cancel();
@@ -422,51 +422,94 @@ export default function MusicSyncPage() {
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen items-center p-4 sm:p-8 bg-gradient-to-br from-[hsl(var(--primary)/0.1)] via-[hsl(var(--accent)/0.1)] to-[hsl(var(--secondary)/0.1)]">
-      <Card className="w-full max-w-7xl flex-grow flex flex-col shadow-2xl overflow-hidden bg-card rounded-xl">
-        <header className="p-6 border-b">
-          <h1 className="text-4xl font-bold text-gradient-primary-accent-secondary">
-            MusicSync
-          </h1>
-          <p className="text-muted-foreground mt-1">Craft your unique sound sequences with ADSR control.</p>
-        </header>
-
-        <div className="p-6 flex-grow flex flex-col space-y-6">
-          <ControlsComponent
-            isPlaying={isPlaying}
-            isLooping={isLooping}
-            outputMode={outputMode}
-            masterVolume={masterVolume}
-            onPlay={handlePlay}
-            onStop={handleStop}
-            onAddBlock={handleAddBlock}
-            onAddSilenceBlock={handleAddSilenceBlock}
-            onToggleLoop={handleToggleLoop}
-            onToggleOutputMode={handleToggleOutputMode}
-            onMasterVolumeChange={handleMasterVolumeChange}
-            canPlay={audioBlocks.length > 0}
-          />
-
-          <div className="flex flex-col md:flex-row flex-grow space-y-6 md:space-y-0 md:space-x-6 min-h-[calc(100vh-320px)] sm:min-h-[450px]">
-            <TimelineComponent
-              className="flex-grow md:w-2/3"
-              blocks={audioBlocks}
-              selectedBlockId={selectedBlockId}
-              onSelectBlock={handleSelectBlock}
-              currentPlayTime={currentPlayTime}
-              isPlaying={isPlaying}
-              pixelsPerSecond={PIXELS_PER_SECOND}
-            />
-            <PropertyPanelComponent
-              className="w-full md:w-1/3 md:max-w-sm"
-              selectedBlock={selectedBlock}
-              onUpdateBlock={handleUpdateBlock}
-              onDeleteBlock={handleDeleteBlock}
-              pixelsPerSecond={PIXELS_PER_SECOND}
-            />
+    <SidebarProvider>
+      <Sidebar>
+        <SidebarHeader className="p-4 border-b">
+          <h2 className="text-xl font-semibold text-sidebar-foreground">Channels</h2>
+        </SidebarHeader>
+        <SidebarContent>
+          <div className="p-4 space-y-4">
+            <div>
+              <h3 className="text-base font-medium text-sidebar-foreground mb-2">Channel 1</h3>
+              <div className="space-y-1">
+                <Label htmlFor="channel-1-volume" className="text-sm text-sidebar-foreground/80">
+                  Volume: {Math.round(masterVolume * 100)}%
+                </Label>
+                <Slider
+                  id="channel-1-volume"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={[masterVolume]}
+                  onValueChange={(value) => handleMasterVolumeChange(value[0])}
+                  className="[&>span]:bg-sidebar-primary [&>span>span]:border-sidebar-primary [&>span>span]:bg-sidebar-background"
+                />
+              </div>
+            </div>
+            {/* Future channels would go here */}
           </div>
+        </SidebarContent>
+        <SidebarFooter className="p-4 border-t">
+          <Button disabled variant="outline" className="w-full border-sidebar-border text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
+            <PlusIcon className="mr-2 h-5 w-5" />
+            Add Channel
+          </Button>
+        </SidebarFooter>
+      </Sidebar>
+
+      <SidebarInset>
+        <div className="flex flex-col h-full bg-gradient-to-br from-[hsl(var(--background)/0.5)] via-[hsl(var(--muted)/0.5)] to-[hsl(var(--background)/0.5)]">
+          <Card className="flex-grow flex flex-col shadow-2xl overflow-hidden bg-card rounded-none sm:rounded-xl m-0 sm:m-4 md:m-8 h-full">
+            <header className="p-4 sm:p-6 border-b flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold text-gradient-primary-accent-secondary">
+                  MusicSync
+                </h1>
+                <p className="text-muted-foreground text-sm sm:text-base mt-1">Craft your unique sound sequences.</p>
+              </div>
+              <SidebarTrigger className="md:hidden text-foreground" />
+            </header>
+
+            <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-4 sm:space-y-6 overflow-y-auto">
+              <ControlsComponent
+                isPlaying={isPlaying}
+                isLooping={isLooping}
+                outputMode={outputMode}
+                masterVolume={masterVolume}
+                onPlay={handlePlay}
+                onStop={handleStop}
+                onAddBlock={handleAddBlock}
+                onAddSilenceBlock={handleAddSilenceBlock}
+                onToggleLoop={handleToggleLoop}
+                onToggleOutputMode={handleToggleOutputMode}
+                onMasterVolumeChange={handleMasterVolumeChange}
+                canPlay={audioBlocks.length > 0}
+              />
+
+              <div className="flex flex-col md:flex-row flex-grow space-y-4 md:space-y-0 md:space-x-6">
+                <TimelineComponent
+                  className="flex-grow md:w-2/3"
+                  blocks={audioBlocks}
+                  selectedBlockId={selectedBlockId}
+                  onSelectBlock={handleSelectBlock}
+                  currentPlayTime={currentPlayTime}
+                  isPlaying={isPlaying}
+                  pixelsPerSecond={PIXELS_PER_SECOND}
+                />
+                <PropertyPanelComponent
+                  className="w-full md:w-1/3 md:max-w-sm"
+                  selectedBlock={selectedBlock}
+                  onUpdateBlock={handleUpdateBlock}
+                  onDeleteBlock={handleDeleteBlock}
+                  pixelsPerSecond={PIXELS_PER_SECOND}
+                />
+              </div>
+            </div>
+          </Card>
         </div>
-      </Card>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
+
+    
