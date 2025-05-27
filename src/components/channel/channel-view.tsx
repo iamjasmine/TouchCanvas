@@ -23,7 +23,6 @@ interface ChannelViewComponentProps {
   pixelsPerSecond: number;
   currentPlayTime: number; 
   isPlaying: boolean;    
-  isAudioReady: boolean; // New prop
 }
 
 const CHANNEL_ROW_HEIGHT_PX = 128; 
@@ -36,7 +35,6 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   onUpdateChannel,
   onSelectBlock,
   pixelsPerSecond,
-  isAudioReady, // Use this prop
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState(channel.name);
@@ -68,7 +66,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
         isSelected ? "ring-2 ring-primary shadow-lg bg-muted/50" : "bg-muted/20 hover:bg-muted/30",
         `h-${CHANNEL_ROW_HEIGHT_PX / 4}` 
       )}
-      onClick={() => isAudioReady && onSelectChannel(channel.id)} // Only allow select if audio is ready
+      onClick={() => onSelectChannel(channel.id)}
     >
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="flex items-center gap-2 flex-grow">
@@ -83,20 +81,19 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                 className="h-8 text-sm"
                 autoFocus
                 onClick={(e) => e.stopPropagation()} 
-                disabled={!isAudioReady}
               />
-              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); saveName(); }} className="h-8 w-8" disabled={!isAudioReady}><CheckIcon className="h-4 w-4"/></Button>
-              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); cancelNameEdit(); }} className="h-8 w-8" disabled={!isAudioReady}><XIcon className="h-4 w-4"/></Button>
+              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); saveName(); }} className="h-8 w-8"><CheckIcon className="h-4 w-4"/></Button>
+              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); cancelNameEdit(); }} className="h-8 w-8"><XIcon className="h-4 w-4"/></Button>
             </>
           ) : (
             <>
               <CardTitle 
-                className={cn("text-lg font-semibold hover:text-primary", isAudioReady ? "cursor-pointer" : "cursor-not-allowed opacity-70")}
-                onClick={(e) => { if(isAudioReady) {e.stopPropagation(); setIsEditingName(true);} }}
+                className="text-lg font-semibold hover:text-primary cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }}
               >
                 {channel.name}
               </CardTitle>
-              <Button variant="ghost" size="icon" onClick={(e) => { if(isAudioReady) {e.stopPropagation(); setIsEditingName(true);} }} className="h-6 w-6 p-0" disabled={!isAudioReady}>
+              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }} className="h-6 w-6 p-0">
                 <Edit3Icon className="h-4 w-4" />
               </Button>
             </>
@@ -106,10 +103,9 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
           <Button
             variant={channel.isMuted ? "destructive" : "outline"}
             size="icon"
-            onClick={(e) => { if(isAudioReady) {e.stopPropagation(); onUpdateChannel(channel.id, { isMuted: !channel.isMuted });} }}
+            onClick={(e) => { e.stopPropagation(); onUpdateChannel(channel.id, { isMuted: !channel.isMuted }); }}
             className="h-8 w-8"
             title={channel.isMuted ? "Unmute Channel" : "Mute Channel"}
-            disabled={!isAudioReady}
           >
             {channel.isMuted ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
           </Button>
@@ -119,17 +115,16 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
             max={1}
             step={0.01}
             value={[channel.volume]}
-            onValueChange={(value) => isAudioReady && onUpdateChannel(channel.id, { volume: value[0] })}
+            onValueChange={(value) => onUpdateChannel(channel.id, { volume: value[0] })}
             className="w-24"
             onClick={(e) => e.stopPropagation()} 
             aria-label={`${channel.name} volume`}
-            disabled={!isAudioReady}
           />
           <span className="text-xs w-8 text-right">{Math.round(channel.volume * 100)}%</span>
         </div>
       </div>
 
-      <ScrollArea className={cn("h-full w-full whitespace-nowrap rounded-md border border-border bg-background/30 flex-grow", !isAudioReady && "opacity-50 cursor-not-allowed")}>
+      <ScrollArea className="h-full w-full whitespace-nowrap rounded-md border border-border bg-background/30 flex-grow">
         <div className="relative py-2 px-2 min-h-[80px]" style={{ width: totalTimelineWidth }}>
           {channel.audioBlocks.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs">
@@ -142,10 +137,9 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                 key={block.id}
                 block={block}
                 isSelected={block.id === selectedBlockId}
-                onClick={(e) => { if(isAudioReady) {e.stopPropagation(); onSelectBlock(channel.id, block.id);} }}
+                onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
                 pixelsPerSecond={pixelsPerSecond}
                 heightInRem={6} 
-                className={cn(!isAudioReady && "pointer-events-none")}
               />
             ))}
           </div>
@@ -155,3 +149,5 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     </Card>
   );
 };
+
+    

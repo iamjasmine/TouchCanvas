@@ -10,7 +10,6 @@ import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon, LayersIcon,
 import { Card } from '@/components/ui/card';
 
 interface ControlsComponentProps {
-  isAudioReady: boolean; // New prop
   isPlaying: boolean;
   isLooping: boolean;
   outputMode: 'mixed' | 'independent';
@@ -27,7 +26,6 @@ interface ControlsComponentProps {
 }
 
 export const ControlsComponent: React.FC<ControlsComponentProps> = ({
-  isAudioReady,
   isPlaying,
   isLooping,
   outputMode,
@@ -49,8 +47,8 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           onClick={onAddBlock} 
           variant="outline" 
           className="transition-transform hover:scale-105" 
-          disabled={!isAudioReady || disableAddBlock} 
-          title={!isAudioReady ? "Start audio context first" : (disableAddBlock ? "Select a channel first" : "Add Audio Block")}
+          disabled={disableAddBlock} 
+          title={disableAddBlock ? "Select a channel first" : "Add Audio Block"}
         >
           <PlusIcon className="mr-2 h-5 w-5" />
           Add Audio
@@ -59,30 +57,30 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           onClick={onAddSilenceBlock} 
           variant="outline" 
           className="transition-transform hover:scale-105" 
-          disabled={!isAudioReady || disableAddBlock} 
-          title={!isAudioReady ? "Start audio context first" : (disableAddBlock ? "Select a channel first" : "Add Silence Block")}
+          disabled={disableAddBlock} 
+          title={disableAddBlock ? "Select a channel first" : "Add Silence Block"}
         >
           <MicOffIcon className="mr-2 h-5 w-5" />
           Add Silence
         </Button>
         <Button
           onClick={onPlay}
-          disabled={!isAudioReady || isPlaying || !canPlay}
+          disabled={isPlaying || !canPlay}
           variant="default"
           className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50"
           aria-label="Play audio sequence"
-          title={!isAudioReady ? "Start audio context first" : (isPlaying ? "Playback in progress" : (!canPlay ? "No blocks to play" : "Play"))}
+          title={isPlaying ? "Playback in progress" : (!canPlay ? "No blocks to play" : "Play")}
         >
           <PlayIcon className="mr-2 h-5 w-5" />
           Play
         </Button>
         <Button
           onClick={onStop}
-          disabled={!isAudioReady || !isPlaying}
+          disabled={!isPlaying}
           variant="destructive"
           className="transition-transform hover:scale-105 disabled:opacity-50"
           aria-label="Stop audio playback"
-          title={!isAudioReady ? "Start audio context first" : (!isPlaying ? "Not playing" : "Stop")}
+          title={!isPlaying ? "Not playing" : "Stop"}
         >
           <StopCircleIcon className="mr-2 h-5 w-5" />
           Stop
@@ -93,8 +91,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           className="transition-transform hover:scale-105"
           aria-pressed={isLooping}
           aria-label={isLooping ? "Disable loop" : "Enable loop"}
-          disabled={!isAudioReady}
-          title={!isAudioReady ? "Start audio context first" : (isLooping ? "Disable loop" : "Enable loop")}
+          title={isLooping ? "Disable loop" : "Enable loop"}
         >
           <RepeatIcon className="mr-2 h-5 w-5" />
           {isLooping ? "Looping" : "Loop"}
@@ -110,8 +107,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
             checked={outputMode === 'independent'}
             onCheckedChange={onToggleOutputMode}
             aria-label={`Current mode: ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output. Switch to ${outputMode === 'mixed' ? 'Independent' : 'Mixed'} Output.`}
-            disabled={!isAudioReady}
-            title={!isAudioReady ? "Start audio context first" : "Toggle Output Mode"}
+            title="Toggle Output Mode"
           />
         </div>
 
@@ -129,11 +125,12 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
             onValueChange={(value) => onMasterVolumeChange(value[0])}
             className="flex-grow"
             aria-label="Master volume control"
-            disabled={!isAudioReady}
-            title={!isAudioReady ? "Start audio context first" : "Adjust Master Volume"}
+            title="Adjust Master Volume"
           />
         </div>
       </div>
     </Card>
   );
 };
+
+    

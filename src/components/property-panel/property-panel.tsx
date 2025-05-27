@@ -18,7 +18,6 @@ interface PropertyPanelComponentProps {
   onDeleteBlock: (blockId: string) => void; 
   className?: string;
   pixelsPerSecond: number;
-  isAudioReady: boolean; // New prop
 }
 
 const waveformOptions: WaveformType[] = ['sine', 'triangle', 'square', 'sawtooth'];
@@ -31,18 +30,17 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
   onUpdateBlock,
   onDeleteBlock,
   className,
-  isAudioReady, // Use this prop
 }) => {
-  if (!selectedBlock || !isAudioReady) { // Also check isAudioReady
+  if (!selectedBlock) { 
     return (
-      <Card className={cn("p-6 flex flex-col items-center justify-center text-center bg-muted/30 shadow-lg transition-all duration-300 ease-in-out min-h-[400px]", className, !isAudioReady && "opacity-60")}>
+      <Card className={cn("p-6 flex flex-col items-center justify-center text-center bg-muted/30 shadow-lg transition-all duration-300 ease-in-out min-h-[400px]", className)}>
         <CardHeader>
           <Music2Icon className="h-16 w-16 text-primary mx-auto mb-4" />
           <CardTitle className="text-xl text-foreground/80">Block Properties</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            {!isAudioReady ? "Please start the audio context to enable editing." : "Select an audio block from a channel's timeline to view and edit its properties here."}
+            Select an audio block from a channel's timeline to view and edit its properties here.
           </p>
           <img src="https://placehold.co/200x150.png?text=Select+Block" alt="Placeholder for property panel" data-ai-hint="music interface abstract" className="mt-4 rounded-md opacity-50"/>
         </CardContent>
@@ -79,11 +77,10 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
                 value={[silentBlock.duration]}
                 onValueChange={(value) => onUpdateBlock({ ...silentBlock, duration: value[0] })}
                 className="mt-2"
-                disabled={!isAudioReady}
               />
             </div>
           </div>
-          <Button onClick={handleDelete} variant="destructive" className="w-full mt-auto" disabled={!isAudioReady}>
+          <Button onClick={handleDelete} variant="destructive" className="w-full mt-auto">
             <Trash2Icon className="mr-2 h-4 w-4" /> Delete Block
           </Button>
         </CardContent>
@@ -129,7 +126,6 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
             <Select
               value={audibleBlock.waveform}
               onValueChange={(value: WaveformType) => handleAudiblePropertyChange('waveform', value)}
-              disabled={!isAudioReady}
             >
               <SelectTrigger id="waveform" className="mt-1">
                 <SelectValue placeholder="Select waveform" />
@@ -154,7 +150,6 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
               value={[audibleBlock.frequency]}
               onValueChange={(value) => handleAudibleSliderChange('frequency', value)}
               className="mt-2 data-[state=active]:ring-primary"
-              disabled={!isAudioReady}
             />
           </div>
 
@@ -168,7 +163,6 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
               value={[audibleBlock.duration]}
               onValueChange={(value) => handleAudibleSliderChange('duration', value)}
               className="mt-2"
-              disabled={!isAudioReady}
             />
           </div>
 
@@ -184,7 +178,6 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
                 id="attack" min={0} max={audibleBlock.duration} step={0.01}
                 value={[audibleBlock.attack]}
                 onValueChange={(value) => handleAudibleSliderChange('attack', value)} className="mt-1"
-                disabled={!isAudioReady}
               />
             </div>
             <div>
@@ -197,7 +190,6 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
                 id="decay" min={0} max={audibleBlock.duration} step={0.01}
                 value={[audibleBlock.decay]}
                 onValueChange={(value) => handleAudibleSliderChange('decay', value)} className="mt-1"
-                disabled={!isAudioReady}
               />
             </div>
             <div>
@@ -210,7 +202,6 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
                 id="sustainLevel" min={0} max={1} step={0.01}
                 value={[audibleBlock.sustainLevel]}
                 onValueChange={(value) => handleAudibleSliderChange('sustainLevel', value)} className="mt-1"
-                disabled={!isAudioReady}
               />
             </div>
             <div>
@@ -223,15 +214,16 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
                 id="release" min={0} max={audibleBlock.duration} step={0.01}
                 value={[audibleBlock.release]}
                 onValueChange={(value) => handleAudibleSliderChange('release', value)} className="mt-1"
-                disabled={!isAudioReady}
               />
             </div>
           </div>
         </div>
-        <Button onClick={handleDelete} variant="destructive" className="w-full mt-auto pt-3" disabled={!isAudioReady}>
+        <Button onClick={handleDelete} variant="destructive" className="w-full mt-auto pt-3">
           <Trash2Icon className="mr-2 h-4 w-4" /> Delete Block
         </Button>
       </CardContent>
     </Card>
   );
 };
+
+    
