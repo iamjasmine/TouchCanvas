@@ -90,6 +90,7 @@ export default function MusicSyncPage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPlayTime, setCurrentPlayTime] = useState(0); // in seconds
   const [isLooping, setIsLooping] = useState(false);
+  const [outputMode, setOutputMode] = useState<'mixed' | 'independent'>('mixed');
 
   const activeAudioNodes = useRef<{ osc: Tone.Oscillator, gainEnv?: Tone.Gain }[]>([]);
   const animationFrameId = useRef<number | null>(null);
@@ -197,17 +198,39 @@ export default function MusicSyncPage() {
 
 
   useEffect(() => {
+    // Logic for isLooping toast
     if (isInitialMount.current) {
-      isInitialMount.current = false;
+        // Skip toast for initial mount for isLooping
     } else {
-      if (toast && typeof isLooping === 'boolean') { 
+        if (toast && typeof isLooping === 'boolean') {
+            toast({
+                title: isLooping ? "Loop Enabled" : "Loop Disabled",
+                description: isLooping ? "Playback will now loop." : "Playback will not loop.",
+            });
+        }
+    }
+  }, [isLooping, toast]);
+
+  useEffect(() => {
+    // Logic for outputMode toast
+    if (isInitialMount.current) {
+        // Skip toast for initial mount for outputMode
+    } else {
+      if (toast) {
         toast({
-            title: isLooping ? "Loop Enabled" : "Loop Disabled",
-            description: isLooping ? "Playback will now loop." : "Playback will not loop.",
+          title: "Output Mode Changed",
+          description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.`,
         });
       }
     }
-  }, [isLooping, toast]);
+  }, [outputMode, toast]);
+
+
+  useEffect(() => { // Combined initial mount effect
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    }
+  }, []);
 
 
   const handleToggleLoop = useCallback(() => {
@@ -226,6 +249,11 @@ export default function MusicSyncPage() {
       return newLoopState;
     });
   }, [isPlaying, audioBlocks]);
+
+  const handleToggleOutputMode = useCallback(() => {
+    setOutputMode(prevMode => (prevMode === 'mixed' ? 'independent' : 'mixed'));
+    // Actual audio routing changes would go here in the future
+  }, []);
 
   const handlePlay = useCallback(async () => {
     if (!audioContextStarted) {
@@ -341,10 +369,6 @@ export default function MusicSyncPage() {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
       }
-      // When isPlaying becomes false, if currentPlayTime is not already 0 (e.g. natural stop),
-      // and Tone.Transport.seconds is also not 0 (it would be totalDuration),
-      // this ensures the playhead reflects the final position or the reset position.
-      // If handleStop set it to 0, or scheduleOnce set it to 0, this will be a no-op or confirm 0.
       setCurrentPlayTime(Tone.Transport.seconds);
     }
     return () => {
@@ -380,11 +404,13 @@ export default function MusicSyncPage() {
           <ControlsComponent
             isPlaying={isPlaying}
             isLooping={isLooping}
+            outputMode={outputMode}
             onPlay={handlePlay}
             onStop={handleStop}
             onAddBlock={handleAddBlock}
             onAddSilenceBlock={handleAddSilenceBlock}
             onToggleLoop={handleToggleLoop}
+            onToggleOutputMode={handleToggleOutputMode}
             canPlay={audioBlocks.length > 0}
           />
 
@@ -411,4 +437,3 @@ export default function MusicSyncPage() {
     </div>
   );
 }
-

@@ -3,31 +3,37 @@
 
 import type React from 'react';
 import { Button } from '@/components/ui/button';
-import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon, LayersIcon, WorkflowIcon } from 'lucide-react';
 
 interface ControlsComponentProps {
   isPlaying: boolean;
   isLooping: boolean;
+  outputMode: 'mixed' | 'independent';
   onPlay: () => void;
   onStop: () => void;
   onAddBlock: () => void;
   onAddSilenceBlock: () => void;
   onToggleLoop: () => void;
+  onToggleOutputMode: () => void;
   canPlay: boolean;
 }
 
 export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   isPlaying,
   isLooping,
+  outputMode,
   onPlay,
   onStop,
   onAddBlock,
   onAddSilenceBlock,
   onToggleLoop,
+  onToggleOutputMode,
   canPlay,
 }) => {
   return (
-    <div className="flex flex-wrap items-center gap-2 p-4 bg-muted rounded-lg shadow">
+    <div className="flex flex-wrap items-center gap-3 p-4 bg-muted rounded-lg shadow">
       <Button onClick={onAddBlock} variant="outline" className="transition-transform hover:scale-105">
         <PlusIcon className="mr-2 h-5 w-5" />
         Add Audio Block
@@ -66,6 +72,18 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
         <RepeatIcon className="mr-2 h-5 w-5" />
         {isLooping ? "Looping" : "Loop"}
       </Button>
+      <div className="flex items-center space-x-2 p-2 rounded-md border border-input bg-background transition-transform hover:scale-105">
+        {outputMode === 'mixed' ? <LayersIcon className="h-5 w-5 text-primary" /> : <WorkflowIcon className="h-5 w-5 text-accent" />}
+        <Label htmlFor="output-mode-switch" className="cursor-pointer text-sm font-medium pr-1">
+           {outputMode === 'mixed' ? 'Mixed Output' : 'Independent Output'}
+        </Label>
+        <Switch
+          id="output-mode-switch"
+          checked={outputMode === 'independent'}
+          onCheckedChange={onToggleOutputMode}
+          aria-label={`Current mode: ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output. Switch to ${outputMode === 'mixed' ? 'Independent' : 'Mixed'} Output.`}
+        />
+      </div>
     </div>
   );
 };
