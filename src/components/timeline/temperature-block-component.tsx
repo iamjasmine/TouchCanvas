@@ -2,23 +2,23 @@
 import type React from 'react';
 import { useState } from 'react';
 import type { TemperatureBlock } from '../../types';
-import { cn } from '@/lib/utils'; 
-import { ThermometerSnowflake, ThermometerSun } from 'lucide-react'; 
+import { cn } from '@/lib/utils';
+import { ThermometerSnowflake, ThermometerSun } from 'lucide-react';
 
 interface TemperatureBlockComponentProps {
   block: TemperatureBlock;
   pixelsPerSecond: number;
   heightInRem?: number;
-  isSelected?: boolean; 
-  onClick?: (event: React.MouseEvent) => void; 
+  isSelected?: boolean;
+  onClick?: (event: React.MouseEvent) => void;
   className?: string;
-  channelId: string; // Added for drag data
+  channelId: string;
 }
 
 export const TemperatureBlockComponent: React.FC<TemperatureBlockComponentProps> = ({
   block,
   pixelsPerSecond,
-  heightInRem = 6, 
+  heightInRem = 6,
   isSelected,
   onClick,
   className,
@@ -26,18 +26,18 @@ export const TemperatureBlockComponent: React.FC<TemperatureBlockComponentProps>
 }) => {
   const [isBeingDragged, setIsBeingDragged] = useState(false);
   const width = (Number(block.duration) || 0) * pixelsPerSecond;
-  const heightStyle = `${heightInRem}rem`; 
+  const heightStyle = `${heightInRem}rem`;
 
   const Icon = block.type === 'cool' ? ThermometerSnowflake : ThermometerSun;
-  const gradientClass = block.type === 'cool' 
-    ? 'from-sky-400 to-sky-600' 
+  const gradientClass = block.type === 'cool'
+    ? 'from-sky-400 to-sky-600'
     : 'from-orange-400 to-orange-600';
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({ 
-      blockId: block.id, 
+    e.dataTransfer.setData('application/json', JSON.stringify({
+      blockId: block.id,
       sourceChannelId: channelId,
-      blockType: 'thermal' // Identify block type for drag/drop
+      blockType: 'thermal'
     }));
     e.dataTransfer.effectAllowed = 'move';
     setIsBeingDragged(true);
@@ -61,8 +61,8 @@ export const TemperatureBlockComponent: React.FC<TemperatureBlockComponentProps>
         isBeingDragged ? 'opacity-50 ring-2 ring-accent scale-105' : '',
         className
       )}
-      style={{ 
-        width: `${width}px`, 
+      style={{
+        width: `${width}px`,
         minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px`,
         height: heightStyle,
         boxSizing: 'border-box',
@@ -70,17 +70,17 @@ export const TemperatureBlockComponent: React.FC<TemperatureBlockComponentProps>
       onClick={onClick}
       role="button"
       aria-pressed={!!isSelected}
-      aria-label={`Temperature block: ${block.type} ${block.intensity}, ${block.duration}s`}
+      aria-label={`Temperature block: ${block.type} ${block.intensity}, ${Number(block.duration).toFixed(1)}s`}
     >
-      <div className="w-full flex justify-between items-center">
-        <span className="text-xs font-medium truncate">
-          {block.type.charAt(0).toUpperCase() + block.type.slice(1)}
+      <div className="w-full flex justify-between items-center text-xs">
+        <span className="font-medium truncate capitalize">
+          {block.type}
         </span>
         <Icon className="h-3 w-3 text-white/80" />
       </div>
       <div className="text-center flex-grow flex flex-col justify-center">
-        <p className="text-sm font-semibold">{block.intensity.charAt(0).toUpperCase() + block.intensity.slice(1)}</p>
-        <p className="text-xs opacity-80">{Number(block.duration).toFixed(1)} s</p>
+        <p className="text-sm font-semibold capitalize">{block.intensity}</p>
+        <p className="text-xs opacity-80">{Number(block.duration).toFixed(1)}s</p>
       </div>
     </div>
   );

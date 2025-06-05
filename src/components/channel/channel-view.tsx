@@ -3,8 +3,9 @@
 
 import type React from 'react';
 import { useState, useRef, useMemo } from 'react';
-import type { Channel, AudioBlock, TemperatureBlock as TemperatureBlockType, TypedAudioBlock } from '@/types';
+import type { Channel, AudioBlock, TemperatureBlock as TemperatureBlockType, TypedAudioBlock, AnyBlock } from '@/types';
 import { AudioBlockComponent } from '@/components/timeline/audio-block-component';
+import { TemperatureBlockComponent } from '@/components/timeline/temperature-block-component';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,21 +14,19 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Volume2Icon, MicIcon, MicOffIcon, Edit3Icon, CheckIcon, XIcon, ListMusicIcon, ThermometerIcon } from 'lucide-react';
 
-import TemperatureBlockComponent from '@/components/timeline/temperature-block-component';
+
 interface ChannelViewComponentProps {
   channel: Channel;
   isSelected: boolean;
-  selectedBlockId: string | null; // Can be for audio or temp block
+  selectedBlockId: string | null;
   onSelectChannel: (channelId: string) => void;
   onUpdateChannel: (channelId: string, updates: Partial<Pick<Channel, 'name' | 'volume' | 'isMuted'>>) => void;
-  onSelectBlock: (channelId: string, blockId: string) => void; // blockId can be audio or temp
+  onSelectBlock: (channelId: string, blockId: string) => void;
   onReorderBlock: (channelId: string, draggedBlockId: string, targetIndex: number) => void;
   pixelsPerSecond: number;
   currentPlayTime: number;
   isPlaying: boolean;
 }
-
-// const CHANNEL_ROW_HEIGHT_PX = 128; // Corresponds to h-32 in Tailwind (32 * 0.25rem = 8rem = 128px)
 
 export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   channel,
@@ -51,7 +50,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     if (editingName.trim() !== '') {
       onUpdateChannel(channel.id, { name: editingName.trim() });
     } else {
-      setEditingName(channel.name); // Reset to original if empty
+      setEditingName(channel.name);
     }
     setIsEditingName(false);
   };
@@ -74,8 +73,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     const { blockId: draggedBlockId, sourceChannelId, blockType } = JSON.parse(transferData);
 
     if (sourceChannelId !== channel.id) {
-        console.warn("Inter-channel drag and drop not yet fully supported.");
-        // Potentially implement inter-channel later by calling a different handler
+        console.warn("Inter-channel drag and drop not yet fully supported for different block types.");
         return;
     }
      if (channel.channelType !== blockType) {
@@ -83,26 +81,19 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
         return;
     }
 
-
     if (!draggedBlockId || !dropZoneRef.current) return;
 
     const dropZone = dropZoneRef.current;
     const clientX = e.clientX;
-    // Determine which list of blocks to use based on channel type
     const currentBlocksList = channel.channelType === 'audio' ? channel.audioBlocks : channel.temperatureBlocks;
     let targetIndex = currentBlocksList.length;
 
-
     const blockElements = Array.from(dropZone.children) as HTMLElement[];
-
     for (let i = 0; i < blockElements.length; i++) {
       const blockElement = blockElements[i];
-      // Ensure we are only considering draggable block elements for position calculation
       if (!blockElement.hasAttribute('draggable') || !blockElement.dataset.blockId) continue;
-
       const rect = blockElement.getBoundingClientRect();
       const midpoint = rect.left + rect.width / 2;
-
       if (clientX < midpoint) {
         targetIndex = i;
         break;
@@ -111,16 +102,14 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     onReorderBlock(channel.id, draggedBlockId, targetIndex);
   };
 
-  // UseMemo to combine and sort audio and temperature blocks based on their startTime
-  // This is important if you ever mix them visually, but for now, channels are typed.
-  const displayBlocks = useMemo(() => {
+  const displayBlocks: AnyBlock[] = useMemo(() => {
     if (channel.channelType === 'audio') {
       return channel.audioBlocks.map(b => ({ ...b, blockRenderType: 'audio' as const }));
     } else if (channel.channelType === 'thermal') {
       return channel.temperatureBlocks.map(b => ({ ...b, blockRenderType: 'temperature' as const }));
     }
     return [];
-  }, [channel.audioBlocks, channel.temperatureBlocks, channel.channelType]);
+  }, [channel]);
 
 
   const ChannelIcon = channel.channelType === 'audio' ? ListMusicIcon : ThermometerIcon;
@@ -128,7 +117,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   return (
     <Card
       className={cn(
-        "flex flex-col p-3 transition-all duration-200 ease-in-out h-32", // Static height
+        "flex flex-col p-3 transition-all duration-200 ease-in-out h-32",
         isSelected ? "ring-2 ring-primary shadow-lg bg-muted/50" : "bg-muted/20 hover:bg-muted/30"
       )}
       onClick={() => onSelectChannel(channel.id)}
@@ -139,24 +128,16 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
           {isEditingName ? (
             <>
               <Input
-                type="text"
-                value={editingName}
-                onChange={handleNameChange}
-                onBlur={saveName}
+                type="text" value={editingName} onChange={handleNameChange} onBlur={saveName}
                 onKeyDown={(keyEvent) => { if (keyEvent.key === 'Enter') saveName(); if (keyEvent.key === 'Escape') cancelNameEdit(); }}
-                className="h-8 text-sm"
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
+                className="h-8 text-sm" autoFocus onClick={(e) => e.stopPropagation()}
               />
               <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); saveName(); }} className="h-8 w-8"><CheckIcon className="h-4 w-4"/></Button>
               <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); cancelNameEdit(); }} className="h-8 w-8"><XIcon className="h-4 w-4"/></Button>
             </>
           ) : (
             <>
-              <CardTitle
-                className="text-lg font-semibold hover:text-primary cursor-pointer"
-                onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }}
-              >
+              <CardTitle className="text-lg font-semibold hover:text-primary cursor-pointer" onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }}>
                 {channel.name}
               </CardTitle>
               <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }} className="h-6 w-6 p-0">
@@ -168,31 +149,24 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
         {channel.channelType === 'audio' && (
           <div className="flex items-center space-x-2 shrink-0 min-w-[200px]">
             <Button
-              variant={channel.isMuted ? "destructive" : "outline"}
-              size="icon"
+              variant={channel.isMuted ? "destructive" : "outline"} size="icon"
               onClick={(e) => { e.stopPropagation(); onUpdateChannel(channel.id, { isMuted: !channel.isMuted }); }}
-              className="h-8 w-8"
-              title={channel.isMuted ? "Unmute Channel" : "Mute Channel"}
+              className="h-8 w-8" title={channel.isMuted ? "Unmute Channel" : "Mute Channel"}
             >
               {channel.isMuted ? <MicOffIcon className="h-4 w-4" /> : <MicIcon className="h-4 w-4" />}
             </Button>
             <Volume2Icon className="h-5 w-5 text-muted-foreground" />
             <Slider
-              min={0}
-              max={1}
-              step={0.01}
-              value={[channel.volume]}
+              min={0} max={1} step={0.01} value={[channel.volume]}
               onValueChange={(value) => onUpdateChannel(channel.id, { volume: value[0] })}
-              className="w-24"
-              onClick={(e) => e.stopPropagation()}
-              aria-label={`${channel.name} volume`}
+              className="w-24" onClick={(e) => e.stopPropagation()} aria-label={`${channel.name} volume`}
             />
             <span className="text-xs w-8 text-right">{Math.round(channel.volume * 100)}%</span>
           </div>
         )}
          {channel.channelType === 'thermal' && (
           <div className="flex items-center space-x-2 shrink-0 min-w-[200px] text-sm text-muted-foreground">
-            (Thermal Controls Placeholder)
+            (Thermal Controls Area)
           </div>
         )}
       </div>
@@ -202,7 +176,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
           ref={dropZoneRef}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className="relative py-2 px-2 min-h-[80px] flex space-x-2 items-center" // Ensure items-center for vertical alignment
+          className="relative py-2 px-2 min-h-[80px] flex space-x-2 items-center"
           style={{
             width: Math.max(
               300,
@@ -220,24 +194,24 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
               return (
                 <AudioBlockComponent
                   key={block.id}
-                  block={block as AudioBlock}
+                  block={block as AudioBlock} // Type assertion
                   isSelected={block.id === selectedBlockId && channel.channelType === 'audio'}
                   onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
                   pixelsPerSecond={pixelsPerSecond}
-                  heightInRem={6} // consistent height
-                  channelId={channel.id} // Pass channelId for drag data
+                  heightInRem={6}
+                  channelId={channel.id}
                 />
               );
             } else if (block.blockRenderType === 'temperature') {
               return (
                 <TemperatureBlockComponent
                   key={block.id}
-                  block={block as TemperatureBlockType}
+                  block={block as TemperatureBlockType} // Type assertion
                   isSelected={block.id === selectedBlockId && channel.channelType === 'thermal'}
                   onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
                   pixelsPerSecond={pixelsPerSecond}
-                  heightInRem={6} // consistent height
-                  channelId={channel.id} // Pass channelId for drag data
+                  heightInRem={6}
+                  channelId={channel.id}
                 />
               );
             }

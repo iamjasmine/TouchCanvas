@@ -2,9 +2,9 @@
 "use client";
 
 import type React from 'react';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as Tone from 'tone';
-import type { AudioBlock, AudibleAudioBlock, SilentAudioBlock, Channel, WaveformType } from '@/types';
+import type { AudioBlock, AudibleAudioBlock, SilentAudioBlock, Channel, WaveformType, TemperatureBlock, AnyBlock, TemperatureType, TemperatureIntensity } from '@/types';
 import { useToneContext } from '@/components/providers/tone-provider';
 import { ControlsComponent } from '@/components/controls/controls-component';
 import { PropertyPanelComponent } from '@/components/property-panel/property-panel.tsx';
@@ -132,12 +132,20 @@ export default function MusicSyncPage() {
   const playbackStartTimeRef = useRef<number | null>(null);
   const loopTimeoutIdRef = useRef<NodeJS.Timeout | null>(null);
 
-
   const isInitialMount = useRef({ looping: true, outputMode: true, masterVolume: true, channelVolume: true });
 
-
   const selectedChannel = channels.find(ch => ch.id === selectedChannelId) || null;
-  const selectedBlock = selectedChannel?.audioBlocks.find(block => block.id === selectedBlockId) || null;
+
+  const selectedBlock = useMemo(() => {
+    if (!selectedChannel || !selectedBlockId) return null;
+    if (selectedChannel.channelType === 'audio') {
+      return selectedChannel.audioBlocks.find(block => block.id === selectedBlockId) || null;
+    } else if (selectedChannel.channelType === 'thermal') {
+      return selectedChannel.temperatureBlocks.find(block => block.id === selectedBlockId) || null;
+    }
+    return null;
+  }, [selectedChannel, selectedBlockId]);
+
 
   useEffect(() => {
     if (audioContextStarted) {
@@ -239,6 +247,21 @@ export default function MusicSyncPage() {
     });
   }, []);
 
+  const recalculateTemperatureBlockStartTimes = useCallback((blocks: TemperatureBlock[]): TemperatureBlock[] => {
+    let cumulativeTime = 0;
+    return blocks.map(block => {
+      const currentDuration = Number(block.duration);
+      if (isNaN(currentDuration) || currentDuration < 0) {
+        console.warn(`[MusicSyncPage] recalculateTemperatureBlockStartTimes: Invalid duration (${block.duration}) for block ${block.id}. Treating as 0.`);
+        return { ...block, startTime: cumulativeTime, duration: 0, blockRenderType: 'temperature' };
+      }
+      const newStartTime = cumulativeTime;
+      cumulativeTime += currentDuration;
+      return { ...block, startTime: newStartTime, blockRenderType: 'temperature' };
+    });
+  }, []);
+
+
   const handleAddAudioChannel = useCallback(async () => {
     if (!(await ensureAudioIsActive())) return;
 
@@ -254,11 +277,11 @@ export default function MusicSyncPage() {
     };
     setChannels(prev => [...prev, newChannel]);
     setSelectedChannelId(newChannelId);
+    setSelectedBlockId(null);
     toast({ title: "Audio Channel Added", description: `New ${newChannel.name} created.` });
   }, [channels, toast, ensureAudioIsActive]);
 
   const handleAddThermalChannel = useCallback(async () => {
-    // ensureAudioIsActive might not be strictly necessary for thermal, but good practice if it ever involves timing/Web APIs
     if (!(await ensureAudioIsActive())) return;
 
     const newChannelId = crypto.randomUUID();
@@ -266,13 +289,14 @@ export default function MusicSyncPage() {
       id: newChannelId,
       name: `Thermal Channel ${channels.filter(ch => ch.channelType === 'thermal').length + 1}`,
       channelType: 'thermal',
-      volume: 0, // Not applicable for thermal
-      isMuted: true, // Not applicable, or default to "off"
+      volume: 0,
+      isMuted: true,
       audioBlocks: [],
       temperatureBlocks: [],
     };
     setChannels(prev => [...prev, newChannel]);
     setSelectedChannelId(newChannelId);
+    setSelectedBlockId(null);
     toast({ title: "Thermal Channel Added", description: `New ${newChannel.name} created.` });
   }, [channels, toast, ensureAudioIsActive]);
 
@@ -306,7 +330,7 @@ export default function MusicSyncPage() {
 
   const handleAddBlock = useCallback(async () => {
     if (!(await ensureAudioIsActive())) return;
-    if (!selectedChannelId || selectedChannel?.channelType === 'thermal') {
+    if (!selectedChannelId || selectedChannel?.channelType !== 'audio') {
       toast({ title: "Cannot Add Audio Block", description: "Please select an audio channel first.", variant: "destructive" });
       return;
     }
@@ -332,7 +356,7 @@ export default function MusicSyncPage() {
 
   const handleAddSilenceBlock = useCallback(async () => {
     if (!(await ensureAudioIsActive())) return;
-    if (!selectedChannelId || selectedChannel?.channelType === 'thermal') {
+    if (!selectedChannelId || selectedChannel?.channelType !== 'audio') {
       toast({ title: "Cannot Add Silence Block", description: "Please select an audio channel first.", variant: "destructive" });
       return;
     }
@@ -350,67 +374,100 @@ export default function MusicSyncPage() {
     toast({ title: "Silence Block Added", description: `Silence added to ${selectedChannel?.name}.` });
   }, [selectedChannelId, selectedChannel, recalculateChannelBlockStartTimes, toast, ensureAudioIsActive]);
 
+  const handleAddTemperatureBlock = useCallback(async () => {
+    if (!(await ensureAudioIsActive())) return;
+    if (!selectedChannelId || selectedChannel?.channelType !== 'thermal') {
+      toast({ title: "Cannot Add Temperature Block", description: "Please select a thermal channel first.", variant: "destructive" });
+      return;
+    }
+    const newBlockId = crypto.randomUUID();
+    const newBlock: TemperatureBlock = {
+      id: newBlockId,
+      type: 'cool',
+      intensity: 'low',
+      duration: 2,
+      startTime: 0,
+      blockRenderType: 'temperature',
+    };
+
+    setChannels(prevChannels => prevChannels.map(ch => {
+      if (ch.id === selectedChannelId) {
+        const updatedBlocks = [...ch.temperatureBlocks, newBlock];
+        return { ...ch, temperatureBlocks: recalculateTemperatureBlockStartTimes(updatedBlocks) };
+      }
+      return ch;
+    }));
+    setSelectedBlockId(newBlockId);
+    toast({ title: "Temperature Block Added", description: `Block added to ${selectedChannel?.name}.` });
+  }, [selectedChannelId, selectedChannel, recalculateTemperatureBlockStartTimes, toast, ensureAudioIsActive]);
+
 
   const handleSelectBlock = useCallback((channelId: string, blockId: string) => {
     setSelectedChannelId(channelId);
     setSelectedBlockId(blockId);
   }, []);
 
-  const handleUpdateBlock = useCallback((updatedBlockData: AudioBlock) => {
-    if (!selectedChannelId || !selectedBlockId || selectedChannel?.channelType === 'thermal') return;
+  const handleUpdateBlock = useCallback((updatedBlockData: AnyBlock) => {
+    if (!selectedChannelId || !selectedBlockId) return;
 
     setChannels(prevChannels => prevChannels.map(ch => {
       if (ch.id === selectedChannelId) {
-        const updatedBlocks = ch.audioBlocks.map(b => {
-          if (b.id === updatedBlockData.id) {
-            const newDuration = Number(updatedBlockData.duration);
-            if (isNaN(newDuration) || newDuration < 0) {
-              console.error(`[MusicSyncPage] handleUpdateBlock: Invalid duration (${updatedBlockData.duration}) received. Keeping old duration.`);
-              updatedBlockData.duration = b.duration; // Keep old duration if new one is invalid
-            }
-
-            if (!updatedBlockData.isSilent && !b.isSilent) {
-              let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
-              const oldAudible = b as AudibleAudioBlock;
-
-              // If duration changed, scale ADSR components proportionally unless they were explicitly changed
-              if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0 && newAudible.duration > 0) {
-                const durationRatio = newAudible.duration / oldAudible.duration;
-                // Only scale if the specific ADSR param wasn't the one being changed (implies user wants to keep it relative)
-                // This check is tricky. For simplicity, if duration changes, we re-calculate ADSR based on new duration,
-                // but try to keep the *ratio* of A, D, R to duration somewhat similar if they were not just edited.
-                // A simpler approach: if duration changes, scale existing A, D, R by the same ratio.
-                if (newAudible.attack === oldAudible.attack) newAudible.attack = oldAudible.attack * durationRatio;
-                if (newAudible.decay === oldAudible.decay) newAudible.decay = oldAudible.decay * durationRatio;
-                if (newAudible.release === oldAudible.release) newAudible.release = oldAudible.release * durationRatio;
+        if (ch.channelType === 'audio' && (updatedBlockData.blockRenderType === 'audio' || 'waveform' in updatedBlockData)) {
+          const updatedBlocks = ch.audioBlocks.map(b => {
+            if (b.id === updatedBlockData.id) {
+              const newDuration = Number(updatedBlockData.duration);
+              if (isNaN(newDuration) || newDuration < 0) {
+                updatedBlockData.duration = b.duration;
               }
-              return adjustADSR(newAudible);
+              if (!updatedBlockData.isSilent && !b.isSilent) {
+                let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
+                const oldAudible = b as AudibleAudioBlock;
+                if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0 && newAudible.duration > 0) {
+                  const durationRatio = newAudible.duration / oldAudible.duration;
+                  if (newAudible.attack === oldAudible.attack) newAudible.attack = oldAudible.attack * durationRatio;
+                  if (newAudible.decay === oldAudible.decay) newAudible.decay = oldAudible.decay * durationRatio;
+                  if (newAudible.release === oldAudible.release) newAudible.release = oldAudible.release * durationRatio;
+                }
+                return adjustADSR(newAudible);
+              }
+              return updatedBlockData as AudioBlock;
             }
-            return updatedBlockData; // For silent blocks or type changes
-          }
-          return b;
-        });
-        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
+            return b;
+          });
+          return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
+        } else if (ch.channelType === 'thermal' && (updatedBlockData.blockRenderType === 'temperature' || 'type' in updatedBlockData)) {
+           const updatedTempBlocks = ch.temperatureBlocks.map(b =>
+            b.id === updatedBlockData.id ? updatedBlockData as TemperatureBlock : b
+          );
+          return { ...ch, temperatureBlocks: recalculateTemperatureBlockStartTimes(updatedTempBlocks) };
+        }
       }
       return ch;
     }));
-  }, [selectedChannelId, selectedBlockId, selectedChannel, recalculateChannelBlockStartTimes]);
+  }, [selectedChannelId, selectedBlockId, recalculateChannelBlockStartTimes, recalculateTemperatureBlockStartTimes]);
 
 
   const handleDeleteBlock = useCallback((blockIdToDelete: string) => {
-    if (!selectedChannelId || selectedChannel?.channelType === 'thermal') return;
+    if (!selectedChannelId || !selectedChannel) return;
+
     setChannels(prevChannels => prevChannels.map(ch => {
       if (ch.id === selectedChannelId) {
-        const filteredBlocks = ch.audioBlocks.filter(b => b.id !== blockIdToDelete);
-        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(filteredBlocks) };
+        if (ch.channelType === 'audio') {
+          const filteredBlocks = ch.audioBlocks.filter(b => b.id !== blockIdToDelete);
+          return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(filteredBlocks) };
+        } else if (ch.channelType === 'thermal') {
+          const filteredBlocks = ch.temperatureBlocks.filter(b => b.id !== blockIdToDelete);
+          return { ...ch, temperatureBlocks: recalculateTemperatureBlockStartTimes(filteredBlocks) };
+        }
       }
       return ch;
     }));
+
     if (selectedBlockId === blockIdToDelete) {
         setSelectedBlockId(null);
     }
     toast({ title: "Block Deleted", description: `Block removed from ${selectedChannel?.name}.`, variant: "destructive" });
-  }, [selectedChannelId, selectedBlockId, selectedChannel, recalculateChannelBlockStartTimes, toast]);
+  }, [selectedChannelId, selectedBlockId, selectedChannel, recalculateChannelBlockStartTimes, recalculateTemperatureBlockStartTimes, toast]);
 
 
   const handleReorderBlock = useCallback((channelId: string, draggedBlockId: string, targetIndex: number) => {
@@ -422,46 +479,41 @@ export default function MusicSyncPage() {
       }
       const channelToUpdate = { ...prevChannels[channelIndex] };
 
-      // Handle reordering for audio blocks
       if (channelToUpdate.channelType === 'audio') {
           const currentBlocks = [...channelToUpdate.audioBlocks];
           const draggedBlockOriginalIndex = currentBlocks.findIndex(b => b.id === draggedBlockId);
-
-          if (draggedBlockOriginalIndex === -1) {
-            console.warn(`[MusicSyncPage] handleReorderBlock: Dragged audio block ${draggedBlockId} not found in channel ${channelId}.`);
-            return prevChannels;
-          }
+          if (draggedBlockOriginalIndex === -1) return prevChannels;
           const [draggedBlock] = currentBlocks.splice(draggedBlockOriginalIndex, 1);
           currentBlocks.splice(targetIndex, 0, draggedBlock);
           channelToUpdate.audioBlocks = recalculateChannelBlockStartTimes(currentBlocks);
       } else if (channelToUpdate.channelType === 'thermal') {
-          // Placeholder for reordering temperature blocks if needed
-          // const currentTempBlocks = [...channelToUpdate.temperatureBlocks];
-          // ... similar logic ...
-          // channelToUpdate.temperatureBlocks = recalculateTemperatureBlockStartTimes(currentTempBlocks);
-          console.warn("Reordering for temperature blocks not fully implemented yet.");
+          const currentBlocks = [...channelToUpdate.temperatureBlocks];
+          const draggedBlockOriginalIndex = currentBlocks.findIndex(b => b.id === draggedBlockId);
+          if (draggedBlockOriginalIndex === -1) return prevChannels;
+          const [draggedBlock] = currentBlocks.splice(draggedBlockOriginalIndex, 1);
+          currentBlocks.splice(targetIndex, 0, draggedBlock);
+          channelToUpdate.temperatureBlocks = recalculateTemperatureBlockStartTimes(currentBlocks);
       }
-
 
       const newChannels = [...prevChannels];
       newChannels[channelIndex] = channelToUpdate;
       return newChannels;
     });
-  }, [recalculateChannelBlockStartTimes]);
+  }, [recalculateChannelBlockStartTimes, recalculateTemperatureBlockStartTimes]);
 
 
   const handleToggleLoop = useCallback(() => {
     setIsLooping(prev => !prev);
   }, []);
 
-  useEffect(() => {
+ useEffect(() => {
     if (!isInitialMount.current.looping) {
       toast({
         title: isLooping ? "Loop Enabled" : "Loop Disabled",
         description: isLooping ? "Playback will now loop." : "Playback will not loop."
       });
     }
-     if (isInitialMount.current.looping) { isInitialMount.current.looping = false; }
+    if (isInitialMount.current.looping) { isInitialMount.current.looping = false; }
   }, [isLooping, toast]);
 
 
@@ -534,7 +586,7 @@ export default function MusicSyncPage() {
 
 
   const handlePlay = useCallback(async () => {
-    handleStop(); // Ensure clean state before playing
+    handleStop();
     console.log('[MusicSyncPage] handlePlay: Called. Using ABSOLUTE TIME scheduling.');
 
     if (!(await ensureAudioIsActive())) {
@@ -549,7 +601,7 @@ export default function MusicSyncPage() {
     }
     console.log('[MusicSyncPage] handlePlay: MasterVolumeNode is ready. Details:', masterVolumeNodeRef.current);
 
-    setIsPlaying(true); // Set isPlaying to true after ensuring audio is active and master node is ready
+    setIsPlaying(true);
 
     const baseAbsoluteTime = Tone.now() + PLAYBACK_START_DELAY;
     console.log(`[MusicSyncPage] handlePlay: Base absolute time for scheduling: ${baseAbsoluteTime}`);
@@ -558,7 +610,21 @@ export default function MusicSyncPage() {
     let maxOverallDuration = 0;
 
     channels.forEach(channel => {
-      if (channel.channelType !== 'audio' || channel.isMuted || channel.audioBlocks.length === 0) {
+      if (channel.channelType === 'thermal') {
+        // Handle thermal channel playback (not implemented yet, just log)
+        let currentChannelDuration = 0;
+        channel.temperatureBlocks.forEach(block => {
+           const blockDurationNumber = Number(block.duration);
+           if (isNaN(blockDurationNumber) || blockDurationNumber <= 0) return;
+           currentChannelDuration += blockDurationNumber;
+        });
+        if (currentChannelDuration > maxOverallDuration) maxOverallDuration = currentChannelDuration;
+        console.log(`[MusicSyncPage] handlePlay: Skipping audio synthesis for THERMAL channel ${channel.name}. Total duration: ${currentChannelDuration}s`);
+        return;
+      }
+
+
+      if (channel.isMuted || channel.audioBlocks.length === 0) {
         console.log(`[MusicSyncPage] handlePlay: Skipping channel ${channel.name} (ID: ${channel.id}) - not audio, muted, or no audio blocks.`);
         return;
       }
@@ -572,7 +638,7 @@ export default function MusicSyncPage() {
 
       if (!masterVolumeNodeRef.current || masterVolumeNodeRef.current.disposed) {
           console.error(`[MusicSyncPage] handlePlay: CRITICAL ERROR for channel ${channel.name} - masterVolumeNodeRef.current is null or disposed before connecting ChannelVolumeNode.`);
-          return; // Skip this channel
+          return;
       }
       console.log(`[MusicSyncPage] handlePlay: Connecting ChannelVolumeNode for ${channel.name} to MasterVolumeNode.`);
       channelVolumeNode.connect(masterVolumeNodeRef.current);
@@ -598,69 +664,63 @@ export default function MusicSyncPage() {
         const audibleBlock = adjustADSR(block as AudibleAudioBlock);
         console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name}, Block ${blockIndex} (ID: ${audibleBlock.id}) PROCESSING. Freq=${audibleBlock.frequency}Hz, Dur=${audibleBlock.duration}s. Scheduled to start at absolute time: ${currentChannelAbsoluteTime.toFixed(3)}`);
 
-        if (audibleBlock.frequency < 40 && audibleBlock.frequency > 0) { // Added > 0 check
+        if (audibleBlock.frequency < 40 && audibleBlock.frequency > 0) {
           console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} in channel ${channel.name} has a very low frequency (${audibleBlock.frequency}Hz). This may be inaudible or primarily felt as vibration.`);
         } else if (audibleBlock.frequency <= 0) {
             console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} in channel ${channel.name} has zero or negative frequency (${audibleBlock.frequency}Hz). Skipping block.`);
-            currentChannelAbsoluteTime += blockDurationNumber; // Still advance time by its duration
+            currentChannelAbsoluteTime += blockDurationNumber;
             currentChannelDuration += blockDurationNumber;
             return;
         }
 
-
-        const osc = new Tone.Oscillator({ type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6 }); // Default volume for osc
-        const adsrGain = new Tone.Gain(0).connect(channelVolumeNode); // Start gain at 0
+        const osc = new Tone.Oscillator({ type: audibleBlock.waveform, frequency: audibleBlock.frequency, volume: -6 });
+        const adsrGain = new Tone.Gain(0).connect(channelVolumeNode);
         osc.connect(adsrGain);
 
         const { duration, attack, decay, sustainLevel, release } = audibleBlock;
-
         const blockAbsStartTime = currentChannelAbsoluteTime;
         const attackAbsEndTime = blockAbsStartTime + attack;
         const decayAbsEndTime = attackAbsEndTime + decay;
-        const releaseAbsStartTime = blockAbsStartTime + duration - release; // Sustain ends here
+        const releaseAbsStartTime = blockAbsStartTime + duration - release;
         const blockAbsEndTime = blockAbsStartTime + duration;
 
         console.log(`[MusicSyncPage] ADSR for block ${audibleBlock.id}: StartAbs=${blockAbsStartTime.toFixed(3)}, AttackEndsAbs=${attackAbsEndTime.toFixed(3)}, DecayEndsAbs=${decayAbsEndTime.toFixed(3)}, SustainLevel=${sustainLevel.toFixed(2)}, ReleaseStartsAbs=${releaseAbsStartTime.toFixed(3)}, BlockEndsAbs=${blockAbsEndTime.toFixed(3)}`);
 
-        // Schedule ADSR envelope
-        adsrGain.gain.setValueAtTime(0, blockAbsStartTime); // Ensure gain is 0 at start
+        adsrGain.gain.setValueAtTime(0, blockAbsStartTime);
         if (attack > 0) adsrGain.gain.linearRampToValueAtTime(1, attackAbsEndTime);
-        else adsrGain.gain.setValueAtTime(1, blockAbsStartTime); // Instant attack
+        else adsrGain.gain.setValueAtTime(1, blockAbsStartTime);
 
         if (decay > 0) adsrGain.gain.linearRampToValueAtTime(sustainLevel, decayAbsEndTime);
-        else adsrGain.gain.setValueAtTime(sustainLevel, attackAbsEndTime); // No decay, go straight to sustain level
+        else adsrGain.gain.setValueAtTime(sustainLevel, attackAbsEndTime);
 
-        // Hold sustain level until release phase starts
-        if (releaseAbsStartTime > decayAbsEndTime) { // Ensure sustain phase exists
+        if (releaseAbsStartTime > decayAbsEndTime) {
              adsrGain.gain.setValueAtTime(sustainLevel, releaseAbsStartTime);
         }
 
         if (release > 0) adsrGain.gain.linearRampToValueAtTime(0, blockAbsEndTime);
-        else adsrGain.gain.setValueAtTime(0, blockAbsEndTime); // Instant release to 0 if release time is 0
+        else adsrGain.gain.setValueAtTime(0, blockAbsEndTime);
 
         console.log(`[MusicSyncPage] Oscillator for block ${audibleBlock.id} scheduled: osc.start(${blockAbsStartTime.toFixed(3)}), osc.stop(${blockAbsEndTime.toFixed(3)})`);
         osc.start(blockAbsStartTime);
-        osc.stop(blockAbsEndTime); // Stop oscillator precisely when block ends
+        osc.stop(blockAbsEndTime);
 
         channelSpecificNodes.push({ osc, adsrGain, channelVolumeNode });
-        currentChannelAbsoluteTime += duration; // Advance time for the next block in this channel
+        currentChannelAbsoluteTime += duration;
         currentChannelDuration += duration;
       });
 
       if (currentChannelDuration > maxOverallDuration) {
         maxOverallDuration = currentChannelDuration;
       }
-      if (isNaN(maxOverallDuration)) { // Safety check
+      if (isNaN(maxOverallDuration)) {
         console.error(`[MusicSyncPage] handlePlay: maxOverallDuration became NaN after processing channel ${channel.name}. Resetting to 0.`);
         maxOverallDuration = 0;
       }
-
 
       if (channelSpecificNodes.length > 0) {
         activeAudioNodesMap.current.set(channel.id, channelSpecificNodes);
         console.log(`[MusicSyncPage] handlePlay: Stored ${channelSpecificNodes.length} active audio nodes for channel ${channel.name}.`);
       } else {
-        // If channel had no audible blocks but a volume node was created, dispose it
         if (channelVolumeNode && !channelVolumeNode.disposed) {
           console.log(`[MusicSyncPage] handlePlay: No audible blocks for channel ${channel.name}, disposing its volume node.`);
           channelVolumeNode.dispose();
@@ -669,34 +729,32 @@ export default function MusicSyncPage() {
     });
 
     if (maxOverallDuration > 0) {
-        playbackStartTimeRef.current = Tone.now(); // Record actual playback start time for UI
+        playbackStartTimeRef.current = Tone.now();
         console.log(`[MusicSyncPage] handlePlay: Playback initiated. Max sequence duration: ${maxOverallDuration.toFixed(3)}s. isLooping: ${isLoopingRef.current}`);
         console.log(`[MusicSyncPage] Current Tone.now() before setTimeout: ${Tone.now()}`);
 
-        const timeoutDuration = (maxOverallDuration + PLAYBACK_START_DELAY + 0.2) * 1000; // Add a small buffer
+        const timeoutDuration = (maxOverallDuration + PLAYBACK_START_DELAY + 0.2) * 1000;
         console.log(`[MusicSyncPage] handlePlay: Scheduling end/loop timeout for ${timeoutDuration.toFixed(0)}ms from now.`);
 
-
         if (loopTimeoutIdRef.current) {
-          clearTimeout(loopTimeoutIdRef.current); // Clear any existing timeout
+          clearTimeout(loopTimeoutIdRef.current);
         }
 
         loopTimeoutIdRef.current = setTimeout(() => {
             const timeoutFireTime = Tone.now();
             console.log(`[MusicSyncPage] Loop/Stop Timeout Fired. Current Tone.now(): ${timeoutFireTime}. playbackStartTimeRef was: ${playbackStartTimeRef.current}`);
-            if (playbackStartTimeRef.current !== null) { // Check if playback wasn't stopped
-                const elapsedSincePlayStart = timeoutFireTime - (playbackStartTimeRef.current - PLAYBACK_START_DELAY); // Correct reference for comparison
+            if (playbackStartTimeRef.current !== null) {
+                const elapsedSincePlayStart = timeoutFireTime - (playbackStartTimeRef.current - PLAYBACK_START_DELAY);
                 console.log(`[MusicSyncPage] Elapsed time since play started (according to Tone.now): ${elapsedSincePlayStart.toFixed(3)}s. Expected maxOverallDuration: ${maxOverallDuration.toFixed(3)}s`);
             }
 
-
-            if (isPlayingRef.current) { // Check if still supposed to be playing
+            if (isPlayingRef.current) {
                  if (isLoopingRef.current) {
                      console.log('[MusicSyncPage] Loop: Triggering handlePlay again.');
-                     handlePlay(); // This will call handleStop first, then restart
+                     handlePlay();
                  } else {
                      console.log('[MusicSyncPage] handlePlay: Automatic stop after max duration.');
-                     handleStop(); // Stop playback if not looping
+                     handleStop();
                  }
             } else {
                 console.log('[MusicSyncPage] handlePlay timeout: Playback was already stopped manually or by other means.');
@@ -705,7 +763,7 @@ export default function MusicSyncPage() {
 
     } else {
         console.log('[MusicSyncPage] handlePlay: Max overall duration is 0 or NaN, nothing to play. Resetting isPlaying.');
-        setIsPlaying(false); // Ensure isPlaying is false if nothing was played
+        setIsPlaying(false);
     }
 
   }, [audioContextStarted, toast, channels, ensureAudioIsActive, handleStop, recalculateChannelBlockStartTimes]);
@@ -719,7 +777,6 @@ export default function MusicSyncPage() {
           animationFrameId.current = null;
           return;
         }
-        // Adjust elapsed time by PLAYBACK_START_DELAY to match audio scheduling
         const elapsed = Tone.now() - (playbackStartTimeRef.current);
         setCurrentPlayTime(elapsed);
         animationFrameId.current = requestAnimationFrame(updatePlayhead);
@@ -729,10 +786,6 @@ export default function MusicSyncPage() {
       if (animationFrameId.current) {
         cancelAnimationFrame(animationFrameId.current);
         animationFrameId.current = null;
-      }
-      // If not playing, ensure playTime is reset to 0 if it wasn't already done by handleStop
-      if (!isPlaying && currentPlayTime !== 0) {
-        // setCurrentPlayTime(0); // This line can cause issues if stop is hit mid-sequence for next play
       }
     }
     return () => {
@@ -758,7 +811,17 @@ export default function MusicSyncPage() {
     };
   }, [handleStop]);
 
-  const totalTimelineWidth = Math.max(300, ...channels.map(ch => ch.audioBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * PIXELS_PER_SECOND, 0) + PIXELS_PER_SECOND));
+  const totalTimelineWidth = Math.max(
+      300,
+      ...channels.map(ch => {
+          if (ch.channelType === 'audio') {
+              return ch.audioBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * PIXELS_PER_SECOND, 0) + PIXELS_PER_SECOND;
+          } else if (ch.channelType === 'thermal') {
+              return ch.temperatureBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * PIXELS_PER_SECOND, 0) + PIXELS_PER_SECOND;
+          }
+          return 0;
+      })
+  );
 
 
   return (
@@ -784,6 +847,7 @@ export default function MusicSyncPage() {
             onStop={handleStop}
             onAddBlock={handleAddBlock}
             onAddSilenceBlock={handleAddSilenceBlock}
+            onAddTemperatureBlock={handleAddTemperatureBlock}
             onToggleLoop={handleToggleLoop}
             onToggleOutputMode={handleToggleOutputMode}
             onMasterVolumeChange={handleMasterVolumeChange}
@@ -796,7 +860,8 @@ export default function MusicSyncPage() {
                     return !b.isSilent && !isNaN(duration) && duration > 0 && (!b.isSilent ? b.frequency > 0 : true);
                 })
             )}
-            disableAddBlock={!selectedChannelId || selectedChannel?.channelType === 'thermal'}
+            disableAddAudioBlock={!selectedChannelId || selectedChannel?.channelType !== 'audio'}
+            disableAddTemperatureBlock={!selectedChannelId || selectedChannel?.channelType !== 'thermal'}
           />
 
           <div className="flex flex-col md:flex-row flex-grow space-y-4 md:space-y-0 md:space-x-6 overflow-hidden">
@@ -806,7 +871,7 @@ export default function MusicSyncPage() {
                   key={channel.id}
                   channel={channel}
                   isSelected={channel.id === selectedChannelId}
-                  selectedBlockId={(channel.id === selectedChannelId && channel.channelType === 'audio') ? selectedBlockId : null}
+                  selectedBlockId={selectedBlockId}
                   onSelectChannel={handleSelectChannel}
                   onUpdateChannel={handleUpdateChannel}
                   onSelectBlock={handleSelectBlock}
@@ -824,7 +889,7 @@ export default function MusicSyncPage() {
                   <ThermometerIcon className="mr-2 h-5 w-5" /> Add Thermal Channel
                 </Button>
               </div>
-              {channels.length > 0 && isPlaying && selectedChannel?.channelType === 'audio' && (
+              {channels.length > 0 && isPlaying && (
                 <PlaybackIndicatorComponent
                   position={currentPlayTime * PIXELS_PER_SECOND}
                   isVisible={isPlaying}
@@ -835,11 +900,12 @@ export default function MusicSyncPage() {
 
             <PropertyPanelComponent
               className="w-full md:w-1/3 md:max-w-sm"
-              selectedBlock={selectedChannel?.channelType === 'audio' ? selectedBlock : null}
+              selectedBlock={selectedBlock}
+              selectedChannelType={selectedChannel?.channelType || null}
               onUpdateBlock={handleUpdateBlock}
               onDeleteBlock={handleDeleteBlock}
               pixelsPerSecond={PIXELS_PER_SECOND}
-              key={selectedBlock?.id} // Re-key to force re-render on block change
+              key={selectedBlock?.id}
             />
           </div>
         </div>
@@ -847,4 +913,3 @@ export default function MusicSyncPage() {
     </div>
   );
 }
-
