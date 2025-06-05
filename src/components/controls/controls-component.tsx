@@ -44,6 +44,14 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   canPlay,
   disableAddBlock,
 }) => {
+  const addBlockTooltip = disableAddBlock 
+    ? "Select an audio channel first" 
+    : (isActivatingAudio ? "Initializing audio..." : "Add Audio Block");
+
+  const addSilenceTooltip = disableAddBlock
+    ? "Select an audio channel first"
+    : (isActivatingAudio ? "Initializing audio..." : "Add Silence Block");
+
   return (
     <Card className="p-4 bg-muted/80 rounded-lg shadow">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
@@ -52,7 +60,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           variant="outline" 
           className="transition-transform hover:scale-105" 
           disabled={disableAddBlock || isActivatingAudio} 
-          title={disableAddBlock ? "Select a channel first" : (isActivatingAudio ? "Initializing audio..." : "Add Audio Block")}
+          title={addBlockTooltip}
         >
           {isActivatingAudio && !disableAddBlock ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlusIcon className="mr-2 h-5 w-5" />}
           Add Audio
@@ -62,7 +70,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           variant="outline" 
           className="transition-transform hover:scale-105" 
           disabled={disableAddBlock || isActivatingAudio} 
-          title={disableAddBlock ? "Select a channel first" : (isActivatingAudio ? "Initializing audio..." : "Add Silence Block")}
+          title={addSilenceTooltip}
         >
           {isActivatingAudio && !disableAddBlock ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <MicOffIcon className="mr-2 h-5 w-5" />}
           Add Silence
@@ -73,7 +81,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           variant="default"
           className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50"
           aria-label="Play audio sequence"
-          title={isActivatingAudio ? "Initializing audio..." : (isPlaying ? "Playback in progress" : (!canPlay ? "No blocks to play" : "Play"))}
+          title={isActivatingAudio ? "Initializing audio..." : (isPlaying ? "Playback in progress" : (!canPlay ? "No valid audio blocks to play or channel muted" : "Play"))}
         >
           {isActivatingAudio && canPlay && !isPlaying ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlayIcon className="mr-2 h-5 w-5" />}
           Play
@@ -149,6 +157,3 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
     </Card>
   );
 };
-
-
-    
