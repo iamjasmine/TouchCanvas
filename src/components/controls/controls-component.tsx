@@ -11,7 +11,7 @@ import { Card } from '@/components/ui/card';
 
 interface ControlsComponentProps {
   isPlaying: boolean;
-  isLooping: boolean; // Still here, but onToggleLoop will be no-op for now
+  isLooping: boolean;
   isActivatingAudio: boolean;
   outputMode: 'mixed' | 'independent';
   masterVolume: number; // 0 to 1
@@ -19,7 +19,7 @@ interface ControlsComponentProps {
   onStop: () => void;
   onAddBlock: () => void; 
   onAddSilenceBlock: () => void; 
-  onToggleLoop: () => void; // Will be no-op for now
+  onToggleLoop: () => void;
   onToggleOutputMode: () => void;
   onMasterVolumeChange: (volume: number) => void;
   onTestAudio: () => void;
@@ -29,7 +29,7 @@ interface ControlsComponentProps {
 
 export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   isPlaying,
-  isLooping, // Kept for UI consistency, but functionality is paused
+  isLooping,
   isActivatingAudio,
   outputMode,
   masterVolume,
@@ -37,7 +37,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   onStop,
   onAddBlock,
   onAddSilenceBlock,
-  onToggleLoop, // Will be no-op
+  onToggleLoop,
   onToggleOutputMode,
   onMasterVolumeChange,
   onTestAudio,
@@ -80,7 +80,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
         </Button>
         <Button
           onClick={onStop}
-          disabled={!isPlaying || isActivatingAudio} // Stop should be enabled if isPlaying, even if audio is activating (to stop test audio perhaps)
+          disabled={!isPlaying || isActivatingAudio} 
           variant="destructive"
           className="transition-transform hover:scale-105 disabled:opacity-50"
           aria-label="Stop audio playback"
@@ -94,9 +94,9 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           variant={isLooping ? "default" : "outline"}
           className="transition-transform hover:scale-105"
           aria-pressed={isLooping}
-          aria-label={isLooping ? "Disable loop (temporarily inactive)" : "Enable loop (temporarily inactive)"}
-          title="Looping functionality is temporarily inactive"
-          disabled={isActivatingAudio || true} // Keep disabled for now
+          aria-label={isLooping ? "Disable Loop" : "Enable Loop"}
+          title={isLooping ? "Disable Loop" : "Enable Loop"}
+          disabled={isActivatingAudio}
         >
           <RepeatIcon className="mr-2 h-5 w-5" />
           {isLooping ? "Looping" : "Loop"}
@@ -149,3 +149,6 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
     </Card>
   );
 };
+
+
+    
