@@ -23,6 +23,9 @@ const nextConfig: NextConfig = {
       '6000-firebase-studio-1748324163417.cluster-zkm2jrwbnbd4awuedc2alqxrpk.cloudworkstations.dev',
     ],
   },
+  output: 'export',
+  basePath: process.env.NODE_ENV === 'production' ? '/TouchCanvas' : '',
+  assetPrefix: process.env.NODE_ENV === 'production' ? '/TouchCanvas/' : '',
 };
 
 export default nextConfig;
