@@ -2,17 +2,20 @@
 "use client";
 
 import type React from 'react';
-import { useState, useRef, useMemo } from 'react';
-import type { Channel, AudioBlock, TemperatureBlock as TemperatureBlockType, TypedAudioBlock, AnyBlock } from '@/types';
+import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import type { Channel, AudioBlock, TemperatureBlock as TemperatureBlockType, AnyBlock } from '@/types';
 import { AudioBlockComponent } from '@/components/timeline/audio-block-component';
 import { TemperatureBlockComponent } from '@/components/timeline/temperature-block-component';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Volume2Icon, MicIcon, MicOffIcon, Edit3Icon, CheckIcon, XIcon, ListMusicIcon, ThermometerIcon, Trash2Icon } from 'lucide-react';
+import { Volume2Icon, MicIcon, MicOffIcon, Edit3Icon, CheckIcon, XIcon, ListMusicIcon, ThermometerIcon, Trash2Icon, BluetoothIcon, CheckCircle2Icon, AlertTriangleIcon, Loader2, LinkIcon, ZapOffIcon } from 'lucide-react';
+import BluetoothManager from '@/lib/bluetooth.js';
+import { useToast } from '@/hooks/use-toast';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 
 interface ChannelViewComponentProps {
@@ -23,11 +26,14 @@ interface ChannelViewComponentProps {
   onUpdateChannel: (channelId: string, updates: Partial<Pick<Channel, 'name' | 'volume' | 'isMuted'>>) => void;
   onSelectBlock: (channelId: string, blockId: string) => void;
   onReorderBlock: (channelId: string, draggedBlockId: string, targetIndex: number) => void;
-  onDeleteChannelRequest: (channelId: string) => void; // New prop
+  onDeleteChannelRequest: (channelId: string) => void;
   pixelsPerSecond: number;
-  currentPlayTime: number; // Retained for potential future use even if indicator is outside
-  isPlaying: boolean; // Retained for potential future use
+  currentPlayTime: number;
+  isPlaying: boolean;
 }
+
+type BluetoothStatus = 'idle' | 'connecting' | 'connected' | 'error' | 'disconnecting';
+
 
 export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   channel,
@@ -43,6 +49,43 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState(channel.name);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+
+  const [bluetoothStatus, setBluetoothStatus] = useState<BluetoothStatus>('idle');
+  const [connectedDeviceName, setConnectedDeviceName] = useState<string | null>(null);
+
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    if (channel.channelType === 'thermal') {
+      const initialStatus = BluetoothManager.getConnectionStatus();
+      if (isMounted.current) {
+        setBluetoothStatus(initialStatus.isConnected ? 'connected' : 'idle');
+        setConnectedDeviceName(initialStatus.deviceName);
+      }
+
+      const handleConnectionChange = (isConnected: boolean, deviceName?: string | null) => {
+        if (isMounted.current) {
+          setBluetoothStatus(isConnected ? 'connected' : 'idle');
+          setConnectedDeviceName(deviceName || null);
+          if (isConnected) {
+            // toast({ title: "PebbleFeel Connected", description: `Device: ${deviceName}` });
+          } else if (bluetoothStatus === 'connected') { // Only toast if it was previously connected
+            // toast({ title: "PebbleFeel Disconnected", variant: "destructive" });
+          }
+        }
+      };
+      BluetoothManager.onConnectionChanged(handleConnectionChange);
+    }
+    return () => {
+      isMounted.current = false;
+      // Note: BluetoothManager doesn't have a way to unregister specific callbacks.
+      // If many channels are created/destroyed, this could lead to stale callbacks.
+      // For a single global callback, this is less of an issue.
+    };
+  }, [channel.channelType, toast, bluetoothStatus]);
+
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditingName(e.target.value);
@@ -74,14 +117,19 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
 
     const { blockId: draggedBlockId, sourceChannelId, blockType } = JSON.parse(transferData);
 
-    if (sourceChannelId !== channel.id) {
-        console.warn("Inter-channel drag and drop not yet fully supported for different block types.");
-        return;
-    }
-     if (channel.channelType !== blockType) {
+    if (channel.channelType !== blockType) {
         console.warn(`Cannot drop ${blockType} block into ${channel.channelType} channel.`);
+        toast({ title: "Drag & Drop Error", description: `Cannot move a ${blockType} block to a ${channel.channelType} channel.`, variant: "destructive"});
         return;
     }
+    if (sourceChannelId !== channel.id && channel.channelType === blockType) {
+      // Allow drop if types match, but for now, we only fully support reorder within the same channel.
+      // This part needs more robust inter-channel block moving logic if desired.
+      // For now, we'll treat it as a reorder IF it somehow ends up here but focus on same-channel.
+       console.warn("Inter-channel drag and drop of same type needs full implementation.");
+       // Let it proceed as if it's a reorder for now to see if onReorderBlock can handle it.
+    }
+
 
     if (!draggedBlockId || !dropZoneRef.current) return;
 
@@ -113,19 +161,73 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     return [];
   }, [channel]);
 
-
   const ChannelIcon = channel.channelType === 'audio' ? ListMusicIcon : ThermometerIcon;
+
+  const handleBluetoothAction = useCallback(async () => {
+    if (channel.channelType !== 'thermal') return;
+
+    if (bluetoothStatus === 'connected') {
+      setBluetoothStatus('disconnecting');
+      await BluetoothManager.disconnectDevice();
+      // Status will be updated by onConnectionChanged
+      toast({ title: "PebbleFeel Disconnecting..." });
+      return;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.bluetooth) {
+      toast({ title: "Bluetooth Not Supported", description: "Web Bluetooth is not available in this browser.", variant: "destructive" });
+      setBluetoothStatus('error');
+      return;
+    }
+
+    setBluetoothStatus('connecting');
+    const result = await BluetoothManager.connectDevice();
+
+    if (isMounted.current) { // Check if component is still mounted
+        if (result.success) {
+            // onConnectionChanged will set to 'connected'
+            toast({ title: "PebbleFeel Connected", description: `Device: ${result.deviceName}` });
+        } else {
+            setBluetoothStatus('error');
+            let description = "Failed to connect to PebbleFeel.";
+            if (result.error === 'cancelled') description = "Device selection cancelled by user.";
+            else if (result.error === 'not_found') description = "PebbleFeel device not found. Ensure it's on and in range.";
+            else if (result.error === 'not_allowed') description = "Bluetooth connection not allowed by user or browser.";
+            toast({ title: "Connection Failed", description, variant: "destructive" });
+        }
+    }
+  }, [channel.channelType, toast, bluetoothStatus]);
+
+
+  const getBluetoothButtonConfig = () => {
+    switch (bluetoothStatus) {
+      case 'connecting':
+        return { text: "Connecting...", Icon: Loader2, variant: "outline", className: "text-yellow-500 animate-spin", disabled: true, tooltip: "Attempting to connect..." };
+      case 'connected':
+        return { text: connectedDeviceName || "Connected", Icon: CheckCircle2Icon, variant: "default", className: "bg-green-500 hover:bg-green-600 text-white", disabled: false, tooltip: `Connected to ${connectedDeviceName || 'PebbleFeel'}. Click to disconnect.` };
+      case 'error':
+        return { text: "Connection Failed", Icon: AlertTriangleIcon, variant: "destructive", className: "", disabled: false, tooltip: "Connection failed. Click to retry." };
+      case 'disconnecting':
+        return { text: "Disconnecting...", Icon: Loader2, variant: "outline", className: "text-orange-500 animate-spin", disabled: true, tooltip: "Disconnecting..." };
+      case 'idle':
+      default:
+        return { text: "Connect PebbleFeel", Icon: LinkIcon, variant: "outline", className: "text-blue-500 hover:bg-blue-500/10", disabled: false, tooltip: "Connect to PebbleFeel device" };
+    }
+  };
+
+  const btButtonConfig = getBluetoothButtonConfig();
+
 
   return (
     <Card
       className={cn(
-        "flex flex-col p-3 transition-all duration-200 ease-in-out h-32", // Static height h-32 (8rem)
+        "flex flex-col p-3 transition-all duration-200 ease-in-out h-32",
         isSelected ? "ring-2 ring-primary shadow-lg bg-muted/50" : "bg-muted/20 hover:bg-muted/30"
       )}
       onClick={() => onSelectChannel(channel.id)}
     >
       <div className="flex items-center justify-between mb-2 px-1">
-        <div className="flex items-center gap-2 flex-grow min-w-0"> {/* min-w-0 for truncation */}
+        <div className="flex items-center gap-2 flex-grow min-w-0">
          <ChannelIcon className={cn("h-5 w-5 shrink-0", channel.channelType === 'audio' ? "text-blue-500" : "text-orange-500")} />
           {isEditingName ? (
             <div className="flex items-center gap-1 flex-grow min-w-0">
@@ -148,7 +250,28 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
             </div>
           )}
         </div>
-        <div className="flex items-center space-x-2 shrink-0">
+        <div className="flex items-center space-x-2 shrink-0 ml-auto">
+          {channel.channelType === 'thermal' && (
+             <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={btButtonConfig.variant as any}
+                    size="sm"
+                    onClick={(e) => { e.stopPropagation(); handleBluetoothAction(); }}
+                    disabled={btButtonConfig.disabled}
+                    className={cn("h-8 w-auto px-2", btButtonConfig.className)}
+                  >
+                    <btButtonConfig.Icon className={cn("h-4 w-4", btButtonConfig.text && "mr-1.5")} />
+                    {btButtonConfig.text}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{btButtonConfig.tooltip}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {channel.channelType === 'audio' && (
             <>
               <Button
@@ -162,15 +285,10 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
               <Slider
                 min={0} max={1} step={0.01} value={[channel.volume]}
                 onValueChange={(value) => onUpdateChannel(channel.id, { volume: value[0] })}
-                className="w-24" onClick={(e) => e.stopPropagation()} aria-label={`${channel.name} volume`}
+                className="w-20 md:w-24" onClick={(e) => e.stopPropagation()} aria-label={`${channel.name} volume`}
               />
               <span className="text-xs w-8 text-right">{Math.round(channel.volume * 100)}%</span>
             </>
-          )}
-          {channel.channelType === 'thermal' && (
-            <div className="flex items-center space-x-2 text-sm text-muted-foreground min-w-[160px] justify-end">
-              {/* Placeholder for thermal specific controls if any */}
-            </div>
           )}
           <Button
             variant="ghost"
@@ -192,11 +310,11 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
           ref={dropZoneRef}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className="relative py-2 px-2 min-h-[80px] flex space-x-2 items-center"
+          className="relative py-2 px-2 min-h-[calc(100%-1rem)] flex space-x-2 items-center" // Adjusted min-height
           style={{
             width: Math.max(
-              300, // Minimum width
-              displayBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * pixelsPerSecond, 0) + pixelsPerSecond // Sum of block widths + buffer
+              300,
+              displayBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * pixelsPerSecond, 0) + pixelsPerSecond
             ),
           }}
         >
@@ -214,7 +332,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                   isSelected={block.id === selectedBlockId && channel.channelType === 'audio'}
                   onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
                   pixelsPerSecond={pixelsPerSecond}
-                  heightInRem={6}
+                  heightInRem={5} // Slightly smaller blocks to fit header
                   channelId={channel.id}
                 />
               );
@@ -226,7 +344,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                   isSelected={block.id === selectedBlockId && channel.channelType === 'thermal'}
                   onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
                   pixelsPerSecond={pixelsPerSecond}
-                  heightInRem={6}
+                  heightInRem={5} // Slightly smaller blocks
                   channelId={channel.id}
                 />
               );
@@ -240,3 +358,5 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   );
 };
 
+
+    

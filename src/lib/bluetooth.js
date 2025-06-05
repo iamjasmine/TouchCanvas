@@ -8,12 +8,10 @@ const ServiceUUIDs = {
 };
 const CharacteristicUUIDs = {
   Write: "8eb21104-0b98-11eb-adc1-0242ac120002",
-  // Notify: "8eb20e7a-0b98-11eb-adc1-0242ac120002", // For notifications if needed later
 };
 
-// PebbleFeel Command Byte Arrays
 const Commands = {
-  ON: new Uint8Array([ // Might not be strictly needed if mode commands activate the device
+  ON: new Uint8Array([
     0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x38, 0x30, 0x30, 0x30, 0x30, 0x31,
     0x30, 0x30, 0x61, 0x61, 0x0d, 0x0a,
   ]),
@@ -21,7 +19,7 @@ const Commands = {
     0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x38, 0x30, 0x30, 0x30, 0x30, 0x30,
     0x30, 0x30, 0x61, 0x62, 0x0d, 0x0a,
   ]),
-  CoolRapid: new Uint8Array([ // 'CoolFastHigh' from sample
+  CoolRapid: new Uint8Array([
     0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x35,
     0x30, 0x30, 0x39, 0x36, 0x0d, 0x0a,
   ]),
@@ -56,6 +54,7 @@ const BluetoothManager = (function() {
   let gattServer = null;
   let writeCharacteristic = null;
   let isDeviceConnected = false;
+  let connectedDeviceNameInternal = null; // Store device name
   let connectionStatusCallback = null;
 
   const _log = (message, ...args) => {
@@ -64,14 +63,15 @@ const BluetoothManager = (function() {
 
   const _error = (message, ...args) => {
     console.error('[BluetoothManager]', message, ...args);
-    // Potentially, you could add a global error callback here too
   };
 
-  const _updateConnectionStatus = (status) => {
+  const _updateConnectionStatus = (status, deviceName = null) => {
     isDeviceConnected = status;
+    connectedDeviceNameInternal = status ? deviceName : null;
     if (connectionStatusCallback) {
       try {
-        connectionStatusCallback(isDeviceConnected);
+        // Pass both status and deviceName to the callback
+        connectionStatusCallback(isDeviceConnected, connectedDeviceNameInternal);
       } catch (e) {
         _error("Error in connectionStatusCallback:", e);
       }
@@ -86,33 +86,31 @@ const BluetoothManager = (function() {
     bluetoothDevice = null;
     gattServer = null;
     writeCharacteristic = null;
-    _updateConnectionStatus(false);
+    _updateConnectionStatus(false, null); // Ensure deviceName is nulled on disconnect
   };
 
   const connectDevice = async () => {
     if (typeof navigator === 'undefined' || !navigator.bluetooth) {
       _error('Web Bluetooth API is not available in this environment.');
-      // Consider how to inform the user if not in a browser context or if BT isn't supported.
-      // For now, returning false and logging an error.
-      // alert('Web Bluetooth is not available on this browser or device.'); // Avoid alert in a library module
-      return false;
+      return { success: false, error: 'not_supported' };
     }
     if (isDeviceConnected) {
       _log('Device already connected.');
-      return true;
+      return { success: true, deviceName: connectedDeviceNameInternal };
     }
 
     try {
       _log('Requesting Bluetooth device with name filter:', PebbleFeelDeviceName);
-      bluetoothDevice = await navigator.bluetooth.requestDevice({
+      const device = await navigator.bluetooth.requestDevice({
         filters: [{ name: PebbleFeelDeviceName }],
-        optionalServices: [ServiceUUIDs.PFService], // Crucial for iOS/macOS if service not advertised
+        optionalServices: [ServiceUUIDs.PFService],
       });
 
-      if (!bluetoothDevice) {
+      if (!device) {
         _error('No device selected by user.');
-        return false; // User cancelled the prompt
+        return { success: false, error: 'cancelled' }; // User cancelled
       }
+      bluetoothDevice = device; // Store device temporarily
 
       _log('Attempting to connect to GATT Server on device:', bluetoothDevice.name);
       bluetoothDevice.addEventListener('gattserverdisconnected', _onGattServerDisconnected);
@@ -123,46 +121,40 @@ const BluetoothManager = (function() {
 
       _log('Getting Write Characteristic...');
       writeCharacteristic = await service.getCharacteristic(CharacteristicUUIDs.Write);
-
-      _updateConnectionStatus(true);
-      _log('Successfully connected to PebbleFeel device and service/characteristic ready.');
-      return true;
+      
+      const name = bluetoothDevice.name || 'PebbleFeel';
+      _updateConnectionStatus(true, name);
+      _log('Successfully connected to PebbleFeel device:', name);
+      return { success: true, deviceName: name };
 
     } catch (err) {
       _error('Error during connectDevice:', err.name, err.message);
       if (bluetoothDevice && bluetoothDevice.gatt && bluetoothDevice.gatt.connected) {
         _log('Cleaning up potentially partial connection.');
-        bluetoothDevice.gatt.disconnect(); // This should trigger _onGattServerDisconnected
-      } else { // If disconnect doesn't trigger, ensure state is reset
+        bluetoothDevice.gatt.disconnect();
+      } else {
          _onGattServerDisconnected({target: bluetoothDevice || {name: 'Unknown'}});
       }
-      // Provide more specific feedback based on error type
-      if (err.name === 'NotFoundError') {
-        _error('PebbleFeel device not found. Make sure it is turned on and in range.');
-      } else if (err.name === 'NotAllowedError') {
-        _error('Bluetooth connection request denied by user or permission not granted.');
-      }
-      return false;
+      let errorType = 'connection_failed';
+      if (err.name === 'NotFoundError') errorType = 'not_found';
+      if (err.name === 'NotAllowedError') errorType = 'not_allowed';
+      return { success: false, error: errorType, message: err.message };
     }
   };
 
   const disconnectDevice = async () => {
     if (bluetoothDevice && bluetoothDevice.gatt && bluetoothDevice.gatt.connected) {
       _log('Disconnecting from device:', bluetoothDevice.name);
-      bluetoothDevice.gatt.disconnect(); // The 'gattserverdisconnected' event will handle state cleanup
+      bluetoothDevice.gatt.disconnect(); 
     } else {
       _log('No active connection to disconnect or device already disconnected.');
-      // Ensure state is clean if called when not truly connected
-       if (isDeviceConnected) { // If state thinks it's connected but gatt is not
+       if (isDeviceConnected) {
           _onGattServerDisconnected({target: bluetoothDevice || {name: 'Previously Connected Device'}});
        }
     }
   };
 
   const sendTemperatureCommand = async (mode, intensity, duration) => {
-    // Note: 'duration' is passed for API consistency but not directly used for command sending.
-    // The PebbleFeel protocol typically sets a mode, and a separate 'OFF' command is needed.
-    // The calling application (MusicSync) should manage timing for turning effects off.
     if (!isDeviceConnected || !writeCharacteristic) {
       _error('Cannot send command: Not connected or characteristic not available.');
       return false;
@@ -190,9 +182,7 @@ const BluetoothManager = (function() {
     }
 
     try {
-      _log(`Sending command: ${mode} - ${intensity}. Bytes: ${Array.from(commandBytes).join(', ')}`);
-      // Using writeValueWithoutResponse as it's common for such devices and matches sample's implicit behavior.
-      // If PebbleFeel requires response, use writeValueWithResponse.
+      _log(`Sending command: ${mode} - ${intensity}. Duration (unused by send): ${duration}s. Bytes: ${Array.from(commandBytes).join(', ')}`);
       await writeCharacteristic.writeValueWithoutResponse(commandBytes);
       _log('Command sent successfully.');
       return true;
@@ -219,27 +209,22 @@ const BluetoothManager = (function() {
   };
 
   const getConnectionStatus = () => {
-    return isDeviceConnected;
+    return { isConnected: isDeviceConnected, deviceName: connectedDeviceNameInternal };
   };
 
   const onConnectionChanged = (callback) => {
     if (typeof callback === 'function') {
       connectionStatusCallback = callback;
-      // Immediately invoke with current status if already connected
-      // This helps if the listener is attached after connection.
-      // callback(isDeviceConnected); // Consider if this immediate call is desired or if it should only fire on *changes*.
-                                  // For now, let's keep it to fire on actual changes or initial connect/disconnect.
     } else {
       _error('Provided callback for onConnectionChanged is not a function.');
     }
   };
 
-  // Public API
   return {
     connectDevice,
     disconnectDevice,
-    sendTemperatureCommand, // mode, intensity, duration (duration not used by this method)
-    turnOffEffect,          // Explicitly turn off
+    sendTemperatureCommand,
+    turnOffEffect,
     getConnectionStatus,
     onConnectionChanged,
   };
