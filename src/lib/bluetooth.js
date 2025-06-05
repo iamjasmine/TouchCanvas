@@ -54,7 +54,7 @@ const BluetoothManager = (function() {
   let gattServer = null;
   let writeCharacteristic = null;
   let isDeviceConnected = false;
-  let connectedDeviceNameInternal = null; // Store device name
+  let connectedDeviceNameInternal = null; 
   let connectionStatusCallback = null;
 
   const _log = (message, ...args) => {
@@ -70,7 +70,6 @@ const BluetoothManager = (function() {
     connectedDeviceNameInternal = status ? deviceName : null;
     if (connectionStatusCallback) {
       try {
-        // Pass both status and deviceName to the callback
         connectionStatusCallback(isDeviceConnected, connectedDeviceNameInternal);
       } catch (e) {
         _error("Error in connectionStatusCallback:", e);
@@ -86,13 +85,13 @@ const BluetoothManager = (function() {
     bluetoothDevice = null;
     gattServer = null;
     writeCharacteristic = null;
-    _updateConnectionStatus(false, null); // Ensure deviceName is nulled on disconnect
+    _updateConnectionStatus(false, null); 
   };
 
   const connectDevice = async () => {
     if (typeof navigator === 'undefined' || !navigator.bluetooth) {
       _error('Web Bluetooth API is not available in this environment.');
-      return { success: false, error: 'not_supported' };
+      return { success: false, error: 'not_supported', message: 'Web Bluetooth API is not available in this browser.' };
     }
     if (isDeviceConnected) {
       _log('Device already connected.');
@@ -108,9 +107,9 @@ const BluetoothManager = (function() {
 
       if (!device) {
         _error('No device selected by user.');
-        return { success: false, error: 'cancelled' }; // User cancelled
+        return { success: false, error: 'cancelled', message: 'Device selection cancelled.' }; 
       }
-      bluetoothDevice = device; // Store device temporarily
+      bluetoothDevice = device; 
 
       _log('Attempting to connect to GATT Server on device:', bluetoothDevice.name);
       bluetoothDevice.addEventListener('gattserverdisconnected', _onGattServerDisconnected);
@@ -123,6 +122,7 @@ const BluetoothManager = (function() {
       writeCharacteristic = await service.getCharacteristic(CharacteristicUUIDs.Write);
       
       const name = bluetoothDevice.name || 'PebbleFeel';
+      connectedDeviceNameInternal = name; // Store name on successful connection
       _updateConnectionStatus(true, name);
       _log('Successfully connected to PebbleFeel device:', name);
       return { success: true, deviceName: name };
@@ -135,9 +135,17 @@ const BluetoothManager = (function() {
       } else {
          _onGattServerDisconnected({target: bluetoothDevice || {name: 'Unknown'}});
       }
+      
       let errorType = 'connection_failed';
-      if (err.name === 'NotFoundError') errorType = 'not_found';
-      if (err.name === 'NotAllowedError') errorType = 'not_allowed';
+      if (err.name === 'SecurityError') {
+        errorType = 'security_error';
+         _error('SecurityError details: Access to Bluetooth feature disallowed by permissions policy. This often happens in sandboxed environments like iframes. Try opening the app in a new tab or window.');
+      } else if (err.name === 'NotFoundError') {
+        errorType = 'not_found';
+      } else if (err.name === 'NotAllowedError') { // User denied permission at the prompt or feature disabled
+        errorType = 'not_allowed';
+      }
+      
       return { success: false, error: errorType, message: err.message };
     }
   };
@@ -148,7 +156,7 @@ const BluetoothManager = (function() {
       bluetoothDevice.gatt.disconnect(); 
     } else {
       _log('No active connection to disconnect or device already disconnected.');
-       if (isDeviceConnected) {
+       if (isDeviceConnected) { // Ensure status is updated if disconnect is called when already logically disconnected
           _onGattServerDisconnected({target: bluetoothDevice || {name: 'Previously Connected Device'}});
        }
     }

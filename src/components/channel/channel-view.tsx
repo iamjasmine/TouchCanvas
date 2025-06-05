@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Volume2Icon, MicIcon, MicOffIcon, Edit3Icon, CheckIcon, XIcon, ListMusicIcon, ThermometerIcon, Trash2Icon, BluetoothIcon, CheckCircle2Icon, AlertTriangleIcon, Loader2, LinkIcon, ZapOffIcon } from 'lucide-react';
+import { Volume2Icon, MicIcon, MicOffIcon, Edit3Icon, CheckIcon, XIcon, ListMusicIcon, ThermometerIcon, Trash2Icon, LinkIcon, CheckCircle2Icon, AlertTriangleIcon, Loader2 } from 'lucide-react';
 import BluetoothManager from '@/lib/bluetooth.js';
 import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -67,22 +67,15 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
 
       const handleConnectionChange = (isConnected: boolean, deviceName?: string | null) => {
         if (isMounted.current) {
-          setBluetoothStatus(isConnected ? 'connected' : 'idle');
+          setBluetoothStatus(isConnected ? 'connected' : bluetoothStatus === 'connecting' && !isConnected ? 'error' : 'idle');
           setConnectedDeviceName(deviceName || null);
-          if (isConnected) {
-            // toast({ title: "PebbleFeel Connected", description: `Device: ${deviceName}` });
-          } else if (bluetoothStatus === 'connected') { // Only toast if it was previously connected
-            // toast({ title: "PebbleFeel Disconnected", variant: "destructive" });
-          }
+          // Toasting can be done by the action initiator (handleBluetoothAction) for more context
         }
       };
       BluetoothManager.onConnectionChanged(handleConnectionChange);
     }
     return () => {
       isMounted.current = false;
-      // Note: BluetoothManager doesn't have a way to unregister specific callbacks.
-      // If many channels are created/destroyed, this could lead to stale callbacks.
-      // For a single global callback, this is less of an issue.
     };
   }, [channel.channelType, toast, bluetoothStatus]);
 
@@ -122,15 +115,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
         toast({ title: "Drag & Drop Error", description: `Cannot move a ${blockType} block to a ${channel.channelType} channel.`, variant: "destructive"});
         return;
     }
-    if (sourceChannelId !== channel.id && channel.channelType === blockType) {
-      // Allow drop if types match, but for now, we only fully support reorder within the same channel.
-      // This part needs more robust inter-channel block moving logic if desired.
-      // For now, we'll treat it as a reorder IF it somehow ends up here but focus on same-channel.
-       console.warn("Inter-channel drag and drop of same type needs full implementation.");
-       // Let it proceed as if it's a reorder for now to see if onReorderBlock can handle it.
-    }
-
-
+    
     if (!draggedBlockId || !dropZoneRef.current) return;
 
     const dropZone = dropZoneRef.current;
@@ -168,31 +153,33 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
 
     if (bluetoothStatus === 'connected') {
       setBluetoothStatus('disconnecting');
-      await BluetoothManager.disconnectDevice();
-      // Status will be updated by onConnectionChanged
+      await BluetoothManager.disconnectDevice(); // onConnectionChanged will update status
       toast({ title: "PebbleFeel Disconnecting..." });
       return;
     }
 
     if (typeof navigator === 'undefined' || !navigator.bluetooth) {
       toast({ title: "Bluetooth Not Supported", description: "Web Bluetooth is not available in this browser.", variant: "destructive" });
-      setBluetoothStatus('error');
+      if (isMounted.current) setBluetoothStatus('error');
       return;
     }
 
-    setBluetoothStatus('connecting');
+    if (isMounted.current) setBluetoothStatus('connecting');
     const result = await BluetoothManager.connectDevice();
 
-    if (isMounted.current) { // Check if component is still mounted
+    if (isMounted.current) { 
         if (result.success) {
-            // onConnectionChanged will set to 'connected'
+            // onConnectionChanged handles setting to 'connected'
             toast({ title: "PebbleFeel Connected", description: `Device: ${result.deviceName}` });
         } else {
             setBluetoothStatus('error');
             let description = "Failed to connect to PebbleFeel.";
             if (result.error === 'cancelled') description = "Device selection cancelled by user.";
             else if (result.error === 'not_found') description = "PebbleFeel device not found. Ensure it's on and in range.";
-            else if (result.error === 'not_allowed') description = "Bluetooth connection not allowed by user or browser.";
+            else if (result.error === 'not_allowed') description = "Bluetooth permission denied. Please allow Bluetooth access in your browser.";
+            else if (result.error === 'security_error') description = "Bluetooth access is restricted by browser security policy (e.g., in an iframe). Try opening the app in a new tab or window.";
+            else if (result.message) description = `Failed to connect: ${result.message}`;
+            
             toast({ title: "Connection Failed", description, variant: "destructive" });
         }
     }
@@ -252,7 +239,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
         </div>
         <div className="flex items-center space-x-2 shrink-0 ml-auto">
           {channel.channelType === 'thermal' && (
-             <TooltipProvider>
+             <TooltipProvider delayDuration={100}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -266,7 +253,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                     {btButtonConfig.text}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>
+                <TooltipContent side="top">
                   <p>{btButtonConfig.tooltip}</p>
                 </TooltipContent>
               </Tooltip>
@@ -310,11 +297,11 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
           ref={dropZoneRef}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className="relative py-2 px-2 min-h-[calc(100%-1rem)] flex space-x-2 items-center" // Adjusted min-height
+          className="relative py-2 px-2 min-h-[calc(100%-1rem)] flex space-x-2 items-center" 
           style={{
             width: Math.max(
               300,
-              displayBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * pixelsPerSecond, 0) + pixelsPerSecond
+              displayBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * pixelsPerSecond, 0) + pixelsPerSecond * 2 
             ),
           }}
         >
@@ -329,10 +316,10 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                 <AudioBlockComponent
                   key={block.id}
                   block={block as AudioBlock}
-                  isSelected={block.id === selectedBlockId && channel.channelType === 'audio'}
+                  isSelected={block.id === selectedBlockId && channel.id === (channel.channelType === 'audio' ? channel.id : null)}
                   onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
                   pixelsPerSecond={pixelsPerSecond}
-                  heightInRem={5} // Slightly smaller blocks to fit header
+                  heightInRem={5} 
                   channelId={channel.id}
                 />
               );
@@ -341,10 +328,10 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                 <TemperatureBlockComponent
                   key={block.id}
                   block={block as TemperatureBlockType}
-                  isSelected={block.id === selectedBlockId && channel.channelType === 'thermal'}
+                  isSelected={block.id === selectedBlockId && channel.id === (channel.channelType === 'thermal' ? channel.id : null)}
                   onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
                   pixelsPerSecond={pixelsPerSecond}
-                  heightInRem={5} // Slightly smaller blocks
+                  heightInRem={5} 
                   channelId={channel.id}
                 />
               );
@@ -357,6 +344,3 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     </Card>
   );
 };
-
-
-    
