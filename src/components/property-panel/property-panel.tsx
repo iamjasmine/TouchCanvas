@@ -1,4 +1,3 @@
-
 "use client";
 
 import type React from 'react';
@@ -284,17 +283,21 @@ export const PropertyPanelComponent: React.FC<PropertyPanelComponentProps> = ({
               </div>
             </div>
 
-            <div>
-              <Label htmlFor="duration-temp" className="text-sm font-medium">Duration ({tempBlock.duration.toFixed(1)} s)</Label>
-               <Slider
-                id="duration-temp"
-                min={0.5}
-                max={30} // Duration for temp might be longer
-                step={0.1}
-                value={[tempBlock.duration]}
-                onValueChange={(value) => handleTemperaturePropertyChange('duration', value[0])}
-                className="mt-2"
-              />
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Duration (seconds)</Label>
+                <div className="flex items-center gap-4">
+                  <Slider
+                    min={0}
+                    max={15}
+                    step={0.1}
+                    value={[tempBlock.duration]}
+                    onValueChange={(value) => handleTemperaturePropertyChange('duration', value[0])}
+                    className="flex-grow"
+                  />
+                  <span className="text-sm w-12 text-right">{tempBlock.duration.toFixed(1)}s</span>
+                </div>
+              </div>
             </div>
           </div>
           <Button onClick={handleDelete} variant="destructive" className="w-full mt-auto">
