@@ -106,7 +106,7 @@ const BluetoothManager = (function() {
       });
 
       if (!device) {
-        _error('No device selected by user.');
+        _log('No device selected by user.'); // Changed from _error to _log as it's a user action
         return { success: false, error: 'cancelled', message: 'Device selection cancelled.' }; 
       }
       bluetoothDevice = device; 
@@ -122,41 +122,52 @@ const BluetoothManager = (function() {
       writeCharacteristic = await service.getCharacteristic(CharacteristicUUIDs.Write);
       
       const name = bluetoothDevice.name || 'PebbleFeel';
-      connectedDeviceNameInternal = name; // Store name on successful connection
+      connectedDeviceNameInternal = name;
       _updateConnectionStatus(true, name);
       _log('Successfully connected to PebbleFeel device:', name);
       return { success: true, deviceName: name };
 
     } catch (err) {
-      _error('Error during connectDevice:', err.name, err.message);
       if (bluetoothDevice && bluetoothDevice.gatt && bluetoothDevice.gatt.connected) {
         _log('Cleaning up potentially partial connection.');
         bluetoothDevice.gatt.disconnect();
-      } else {
-         _onGattServerDisconnected({target: bluetoothDevice || {name: 'Unknown'}});
       }
+      // Ensure `_onGattServerDisconnected` is called to reset state even if connection fails early
+      // This ensures the UI (via `onConnectionChanged`) reflects the disconnected state.
+      _onGattServerDisconnected({target: bluetoothDevice || {name: 'Unknown'}});
       
       let errorType = 'connection_failed';
+      let returnMessage = err.message;
+
       if (err.name === 'SecurityError') {
         errorType = 'security_error';
-         _error('SecurityError details: Access to Bluetooth feature disallowed by permissions policy. This often happens in sandboxed environments like iframes. Try opening the app in a new tab or window.');
+        returnMessage = 'Access to Bluetooth feature disallowed by permissions policy. This often happens in sandboxed environments like iframes. Try opening the app in a new tab or window.';
+        // Log as a warning or info, not a critical error, as it's an environmental constraint often handled by UI.
+        console.warn(`[BluetoothManager] Connection failed due to SecurityError: ${err.message}. This is typically handled by the UI with advice to the user.`);
       } else if (err.name === 'NotFoundError') {
         errorType = 'not_found';
-      } else if (err.name === 'NotAllowedError') { // User denied permission at the prompt or feature disabled
+        returnMessage = 'PebbleFeel device not found. Ensure it is discoverable and in range.';
+        _error('NotFoundError during device request:', err.message); 
+      } else if (err.name === 'NotAllowedError') { 
         errorType = 'not_allowed';
+        returnMessage = 'Bluetooth permission denied or feature disabled by user/browser.';
+        _error('NotAllowedError during device request:', err.message);
+      } else {
+        // For other unexpected errors, maintain the _error logging.
+        _error('Unhandled error during connectDevice:', err.name, err.message);
       }
       
-      return { success: false, error: errorType, message: err.message };
+      return { success: false, error: errorType, message: returnMessage };
     }
   };
 
   const disconnectDevice = async () => {
     if (bluetoothDevice && bluetoothDevice.gatt && bluetoothDevice.gatt.connected) {
       _log('Disconnecting from device:', bluetoothDevice.name);
-      bluetoothDevice.gatt.disconnect(); 
+      bluetoothDevice.gatt.disconnect(); // Triggers _onGattServerDisconnected
     } else {
       _log('No active connection to disconnect or device already disconnected.');
-       if (isDeviceConnected) { // Ensure status is updated if disconnect is called when already logically disconnected
+       if (isDeviceConnected) { 
           _onGattServerDisconnected({target: bluetoothDevice || {name: 'Previously Connected Device'}});
        }
     }
@@ -239,3 +250,4 @@ const BluetoothManager = (function() {
 })();
 
 export default BluetoothManager;
+
