@@ -387,78 +387,63 @@ export default function MusicSyncPage() {
   }, [toast, channels, selectedChannelId]);
 
 
-  const handleAddBlock = useCallback(async () => {
-    if (!(await ensureAudioIsActive())) return;
-    if (!selectedChannelId || selectedChannel?.channelType !== 'audio') {
-      toast({ title: "Cannot Add Audio Block", description: "Please select an audio channel first.", variant: "destructive" });
-      return;
-    }
-    const newBlockId = crypto.randomUUID();
-    const initialDuration = 2;
-    const adsrDefaults = calculateADSRDefaults(initialDuration);
+  const handleAddBlock = useCallback(() => {
+    if (!selectedChannelId || !selectedChannel) return;
+    if (selectedChannel.channelType !== 'audio') return;
 
-    let newBlock: AudibleAudioBlock = {
-      id: newBlockId, waveform: 'sine', frequency: 220, duration: initialDuration, startTime: 0, isSilent: false, ...adsrDefaults,
-    };
-    newBlock = adjustADSR(newBlock);
-
-    setChannels(prevChannels => prevChannels.map(ch => {
-      if (ch.id === selectedChannelId) {
-        const updatedBlocks = [...ch.audioBlocks, newBlock];
-        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
-      }
-      return ch;
-    }));
-    setSelectedBlockId(newBlockId);
-    toast({ title: "Audio Block Added", description: `Block added to ${selectedChannel?.name}.` });
-  }, [selectedChannelId, selectedChannel, recalculateChannelBlockStartTimes, toast, ensureAudioIsActive]);
-
-  const handleAddSilenceBlock = useCallback(async () => {
-    if (!(await ensureAudioIsActive())) return;
-    if (!selectedChannelId || selectedChannel?.channelType !== 'audio') {
-      toast({ title: "Cannot Add Silence Block", description: "Please select an audio channel first.", variant: "destructive" });
-      return;
-    }
-    const newBlockId = crypto.randomUUID();
-    const newBlock: SilentAudioBlock = { id: newBlockId, duration: 1, startTime: 0, isSilent: true };
-
-    setChannels(prevChannels => prevChannels.map(ch => {
-      if (ch.id === selectedChannelId) {
-        const updatedBlocks = [...ch.audioBlocks, newBlock];
-        return { ...ch, audioBlocks: recalculateChannelBlockStartTimes(updatedBlocks) };
-      }
-      return ch;
-    }));
-    setSelectedBlockId(newBlockId);
-    toast({ title: "Silence Block Added", description: `Silence added to ${selectedChannel?.name}.` });
-  }, [selectedChannelId, selectedChannel, recalculateChannelBlockStartTimes, toast, ensureAudioIsActive]);
-
-  const handleAddTemperatureBlock = useCallback(async () => {
-    if (!(await ensureAudioIsActive())) return;
-    if (!selectedChannelId || selectedChannel?.channelType !== 'thermal') {
-      toast({ title: "Cannot Add Temperature Block", description: "Please select a thermal channel first.", variant: "destructive" });
-      return;
-    }
-    const newBlockId = crypto.randomUUID();
-    const newBlock: TemperatureBlock = {
-      id: newBlockId,
-      type: 'cool',
-      intensity: 'low',
-      duration: 2,
+    const newBlock: AudibleAudioBlock = {
+      id: crypto.randomUUID(),
       startTime: 0,
-      blockRenderType: 'temperature',
+      duration: 1,
+      waveform: 'sine',
+      frequency: 440,
+      isSilent: false,
+      ...calculateADSRDefaults(1),
     };
 
-    setChannels(prevChannels => prevChannels.map(ch => {
-      if (ch.id === selectedChannelId) {
-        const updatedBlocks = [...ch.temperatureBlocks, newBlock];
-        return { ...ch, temperatureBlocks: recalculateTemperatureBlockStartTimes(updatedBlocks) };
-      }
-      return ch;
-    }));
-    setSelectedBlockId(newBlockId);
-    toast({ title: "Temperature Block Added", description: `Block added to ${selectedChannel?.name}.` });
-  }, [selectedChannelId, selectedChannel, recalculateTemperatureBlockStartTimes, toast, ensureAudioIsActive]);
+    setChannels(channels.map(ch => 
+      ch.id === selectedChannelId 
+        ? { ...ch, audioBlocks: [...ch.audioBlocks, newBlock] }
+        : ch
+    ));
+  }, [selectedChannelId, selectedChannel, channels]);
+
+  const handleAddSilenceBlock = useCallback(() => {
+    if (!selectedChannelId || !selectedChannel) return;
+    if (selectedChannel.channelType !== 'audio') return;
+
+    const newBlock: SilentAudioBlock = {
+      id: crypto.randomUUID(),
+      startTime: 0,
+      duration: 1,
+      isSilent: true,
+    };
+
+    setChannels(channels.map(ch => 
+      ch.id === selectedChannelId 
+        ? { ...ch, audioBlocks: [...ch.audioBlocks, newBlock] }
+        : ch
+    ));
+  }, [selectedChannelId, selectedChannel, channels]);
+
+  const handleAddTemperatureBlock = useCallback(() => {
+    if (!selectedChannelId || !selectedChannel) return;
+    if (selectedChannel.channelType !== 'thermal') return;
+
+    const newBlock: TemperatureBlock = {
+      id: crypto.randomUUID(),
+      startTime: 0,
+      duration: 1,
+      type: 'cool',
+      intensity: 'mid',
+    };
+
+    setChannels(channels.map(ch => 
+      ch.id === selectedChannelId 
+        ? { ...ch, temperatureBlocks: [...ch.temperatureBlocks, newBlock] }
+        : ch
+    ));
+  }, [selectedChannelId, selectedChannel, channels]);
 
 
   const handleSelectBlock = useCallback((channelId: string, blockId: string) => {
@@ -564,8 +549,8 @@ export default function MusicSyncPage() {
 
 
   const handleToggleLoop = useCallback(() => {
-    setIsLooping(prev => !prev);
-  }, []);
+    setIsLooping(!isLooping);
+  }, [isLooping]);
 
  useEffect(() => {
     if (!isInitialMount.current.looping) {
@@ -590,8 +575,8 @@ export default function MusicSyncPage() {
 
 
   const handleToggleOutputMode = useCallback(() => {
-    setOutputMode(prevMode => (prevMode === 'mixed' ? 'independent' : 'mixed'));
-  }, []);
+    setOutputMode(outputMode === 'mixed' ? 'independent' : 'mixed');
+  }, [outputMode]);
 
   const isPlayingRef = useRef(isPlaying);
   useEffect(() => {
@@ -885,102 +870,122 @@ export default function MusicSyncPage() {
 
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-[hsl(var(--background)/0.5)] via-[hsl(var(--muted)/0.5)] to-[hsl(var(--background)/0.5)] p-0 sm:p-4 md:p-8">
-      <Card className="flex-grow flex flex-col shadow-2xl overflow-hidden bg-card rounded-none sm:rounded-xl h-full">
-        <header className="p-4 sm:p-6 border-b flex items-center justify-between sticky top-0 bg-card/80 backdrop-blur-sm z-10">
-          <div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-gradient-primary-accent-secondary flex items-center">
-              <ListMusicIcon className="mr-3 h-8 w-8" />
-              TouchCanvas
-            </h1>
-          </div>
-        </header>
-
-        <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-4 sm:space-y-6 overflow-hidden">
-          <ControlsComponent
-            isPlaying={isPlaying}
-            isLooping={isLooping}
-            isActivatingAudio={isActivatingAudio}
-            outputMode={outputMode}
-            masterVolume={masterVolume}
-            onPlay={handlePlay}
-            onStop={handleStop}
-            onAddBlock={handleAddBlock}
-            onAddSilenceBlock={handleAddSilenceBlock}
-            onAddTemperatureBlock={handleAddTemperatureBlock}
-            onToggleLoop={handleToggleLoop}
-            onToggleOutputMode={handleToggleOutputMode}
-            onMasterVolumeChange={handleMasterVolumeChange}
-            onTestAudio={testAudio}
-            canPlay={channels.some(ch =>
-                ch.channelType === 'audio' &&
-                !ch.isMuted &&
-                ch.audioBlocks.some(b => {
-                    const duration = Number(b.duration);
-                    return !b.isSilent && !isNaN(duration) && duration > 0 && (!b.isSilent ? b.frequency > 0 : true);
-                })
-            )}
-            disableAddAudioBlock={!selectedChannelId || selectedChannel?.channelType !== 'audio'}
-            disableAddTemperatureBlock={!selectedChannelId || selectedChannel?.channelType !== 'thermal'}
-          />
-
-          <div className="flex flex-col md:flex-row flex-grow space-y-4 md:space-y-0 md:space-x-6 overflow-hidden">
-            <div className="flex-grow md:w-2/3 flex flex-col space-y-2 overflow-y-auto pr-9 pl-5 pt-5 pb-5 relative">
-              {channels.map(channel => (
+    <div className="flex flex-col h-screen">
+      <header className="border-b p-4">
+        <h1 className="text-2xl font-bold">TouchCanvas</h1>
+      </header>
+      
+      <main className="flex-1 flex">
+        <div className="flex-1 p-4">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-semibold">Channels</h2>
+              <Button
+                onClick={() => {
+                  const newChannel: Channel = {
+                    id: crypto.randomUUID(),
+                    name: `Audio Channel ${channels.length + 1}`,
+                    channelType: 'audio',
+                    volume: 0.75,
+                    isMuted: false,
+                    audioBlocks: [],
+                    temperatureBlocks: [],
+                  };
+                  setChannels([...channels, newChannel]);
+                }}
+              >
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Add Channel
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              {channels.map((channel) => (
                 <ChannelViewComponent
                   key={channel.id}
                   channel={channel}
                   isSelected={channel.id === selectedChannelId}
                   selectedBlockId={selectedBlockId}
-                  onSelectChannel={handleSelectChannel}
+                  onSelectChannel={setSelectedChannelId}
                   onUpdateChannel={handleUpdateChannel}
-                  onSelectBlock={handleSelectBlock}
-                  onReorderBlock={handleReorderBlock}
+                  onSelectBlock={setSelectedBlockId}
+                  onReorderBlock={(channelId, draggedBlockId, targetIndex) => {
+                    // ブロックの並び替えロジックを実装
+                  }}
                   onDeleteChannelRequest={handleRequestDeleteChannel}
                   pixelsPerSecond={PIXELS_PER_SECOND}
                   currentPlayTime={currentPlayTime}
                   isPlaying={isPlaying}
                 />
               ))}
-              <div className="flex space-x-2 mt-4">
-                <Button onClick={handleAddAudioChannel} variant="outline" className="flex-1">
-                  <ListMusicIcon className="mr-2 h-5 w-5" /> Add Audio Channel
-                </Button>
-                <Button
-                  onClick={handleAddThermalChannel}
-                  variant="outline"
-                  className="flex-1"
-                  disabled={thermalChannelExists}
-                >
-                  <ThermometerIcon className="mr-2 h-5 w-5" /> Add Thermal Channel
-                </Button>
-              </div>
             </div>
-
-            <PropertyPanelComponent
-              className="w-full md:w-1/3 md:min-w-[320px] md:max-w-sm"
-              selectedBlock={selectedBlock}
-              selectedChannelType={selectedChannel?.channelType || null}
-              onUpdateBlock={handleUpdateBlock}
-              onDeleteBlock={handleDeleteBlock}
-              pixelsPerSecond={PIXELS_PER_SECOND}
-              key={selectedBlock?.id} // Force re-render when block changes
-            />
           </div>
         </div>
-      </Card>
-      <AlertDialog open={!!channelToDelete} onOpenChange={(isOpen) => !isOpen && setChannelToDelete(null)}>
+        
+        <div className="w-80 border-l p-4">
+          <PropertyPanelComponent
+            selectedBlock={selectedBlock}
+            selectedChannelType={selectedChannel?.channelType || null}
+            onUpdateBlock={(updatedBlock) => {
+              // ブロックの更新ロジックを実装
+            }}
+            onDeleteBlock={(blockId) => {
+              // ブロックの削除ロジックを実装
+            }}
+            pixelsPerSecond={PIXELS_PER_SECOND}
+          />
+        </div>
+      </main>
+      
+      <footer className="border-t p-4">
+        <ControlsComponent
+          isPlaying={isPlaying}
+          isLooping={isLooping}
+          isActivatingAudio={isActivatingAudio}
+          outputMode={outputMode}
+          masterVolume={masterVolume}
+          onPlay={async () => {
+            if (!audioContextStarted) {
+              const success = await ensureAudioIsActive();
+              if (!success) return;
+            }
+            setIsPlaying(true);
+          }}
+          onStop={() => {
+            setIsPlaying(false);
+            setCurrentPlayTime(0);
+          }}
+          onAddBlock={handleAddBlock}
+          onAddSilenceBlock={handleAddSilenceBlock}
+          onAddTemperatureBlock={handleAddTemperatureBlock}
+          onToggleLoop={handleToggleLoop}
+          onToggleOutputMode={handleToggleOutputMode}
+          onMasterVolumeChange={setMasterVolume}
+          onTestAudio={testAudio}
+          canPlay={channels.some(ch =>
+            ch.channelType === 'audio' &&
+            !ch.isMuted &&
+            ch.audioBlocks.some(b => {
+              const duration = Number(b.duration);
+              return !b.isSilent && !isNaN(duration) && duration > 0 && (!b.isSilent ? b.frequency > 0 : true);
+            })
+          )}
+          disableAddAudioBlock={!selectedChannelId || selectedChannel?.channelType !== 'audio'}
+          disableAddTemperatureBlock={!selectedChannelId || selectedChannel?.channelType !== 'thermal'}
+        />
+      </footer>
+
+      <AlertDialog open={!!channelToDelete} onOpenChange={() => setChannelToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you sure you want to delete this channel?</AlertDialogTitle>
+            <AlertDialogTitle>Delete Channel</AlertDialogTitle>
             <AlertDialogDescription>
-              Channel: "{channelToDelete?.name || 'Selected Channel'}"<br />
-              All blocks in this channel will be permanently lost. This action cannot be undone.
+              Are you sure you want to delete this channel? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setChannelToDelete(null)}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={executeDeleteChannel}>Delete Channel</AlertDialogAction>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeDeleteChannel}>Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
