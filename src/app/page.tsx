@@ -1,4 +1,3 @@
-
 "use client";
 
 import type React from 'react';
@@ -7,7 +6,7 @@ import * as Tone from 'tone';
 import type { AudioBlock, AudibleAudioBlock, SilentAudioBlock, Channel, WaveformType, TemperatureBlock, AnyBlock, TemperatureType, TemperatureIntensity } from '@/types';
 import { useToneContext } from '@/components/providers/tone-provider';
 import { ControlsComponent } from '@/components/controls/controls-component';
-import { PropertyPanelComponent } from '@/components/property-panel/property-panel.tsx';
+import { PropertyPanelComponent } from '@/components/property-panel/property-panel';
 import { ChannelViewComponent } from '@/components/channel/channel-view';
 import { PlaybackIndicatorComponent } from '@/components/timeline/playback-indicator-component';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -201,15 +200,16 @@ export default function MusicSyncPage() {
         console.warn('[MusicSyncPage] ensureAudioIsActive: activateAudio() did not result in "running" state. Current state:', Tone.context.state);
         console.log('[MusicSyncPage] ensureAudioIsActive: Making a direct Tone.start() attempt.');
         await Tone.start();
-        if (Tone.context.state === 'running') {
+        if ((Tone.context.state as AudioContextState) === "running") {
             console.log('[MusicSyncPage] ensureAudioIsActive: Direct Tone.start() successful. Tone.context.state:', Tone.context.state);
-            if (!audioContextStarted) activateAudio(); // Ensure app state is synced
+            if (!audioContextStarted) {
+                await activateAudio(); // Ensure app state is synced
+            }
             return true;
-        } else {
-            console.error('[MusicSyncPage] ensureAudioIsActive: Direct Tone.start() also failed. Current state:', Tone.context.state);
-            toast({ title: "Audio Activation Failed", description: "Could not enable audio. Please interact with the page again or check browser permissions.", variant: "destructive" });
-            return false;
         }
+        console.error('[MusicSyncPage] ensureAudioIsActive: Direct Tone.start() also failed. Current state:', Tone.context.state);
+        toast({ title: "Audio Activation Failed", description: "Could not enable audio. Please interact with the page again or check browser permissions.", variant: "destructive" });
+        return false;
       }
     } catch (error) {
       console.error('[MusicSyncPage] ensureAudioIsActive: Error during audio activation:', error);
@@ -891,7 +891,7 @@ export default function MusicSyncPage() {
           <div>
             <h1 className="text-3xl sm:text-4xl font-bold text-gradient-primary-accent-secondary flex items-center">
               <ListMusicIcon className="mr-3 h-8 w-8" />
-              MusicSync
+              TouchCanvas
             </h1>
           </div>
         </header>
@@ -925,7 +925,7 @@ export default function MusicSyncPage() {
           />
 
           <div className="flex flex-col md:flex-row flex-grow space-y-4 md:space-y-0 md:space-x-6 overflow-hidden">
-            <div className="flex-grow md:w-2/3 flex flex-col space-y-2 overflow-y-auto pr-2 relative">
+            <div className="flex-grow md:w-2/3 flex flex-col space-y-2 overflow-y-auto pr-9 pl-5 pt-5 pb-5 relative">
               {channels.map(channel => (
                 <ChannelViewComponent
                   key={channel.id}
@@ -955,17 +955,10 @@ export default function MusicSyncPage() {
                   <ThermometerIcon className="mr-2 h-5 w-5" /> Add Thermal Channel
                 </Button>
               </div>
-              {channels.length > 0 && isPlaying && selectedChannel?.channelType === 'audio' && (
-                <PlaybackIndicatorComponent
-                  position={currentPlayTime * PIXELS_PER_SECOND}
-                  isVisible={isPlaying}
-                  containerHeight={channels.reduce((acc, _ch, idx) => acc + (idx > 0 ? 8 : 0) + CHANNEL_ROW_HEIGHT_PX, 0)}
-                />
-              )}
             </div>
 
             <PropertyPanelComponent
-              className="w-full md:w-1/3 md:max-w-sm"
+              className="w-full md:w-1/3 md:min-w-[320px] md:max-w-sm"
               selectedBlock={selectedBlock}
               selectedChannelType={selectedChannel?.channelType || null}
               onUpdateBlock={handleUpdateBlock}

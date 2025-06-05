@@ -1,4 +1,3 @@
-
 "use client";
 
 import type React from 'react';
@@ -158,7 +157,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
       return;
     }
 
-    if (typeof navigator === 'undefined' || !navigator.bluetooth) {
+    if (typeof navigator === 'undefined' || !('bluetooth' in navigator)) {
       toast({ title: "Bluetooth Not Supported", description: "Web Bluetooth is not available in this browser.", variant: "destructive" });
       if (isMounted.current) setBluetoothStatus('error');
       return;
@@ -208,7 +207,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   return (
     <Card
       className={cn(
-        "flex flex-col p-3 transition-all duration-200 ease-in-out h-32",
+        "flex flex-col p-3 transition-all duration-200 ease-in-out h-[170px]",
         isSelected ? "ring-2 ring-primary shadow-lg bg-muted/50" : "bg-muted/20 hover:bg-muted/30"
       )}
       onClick={() => onSelectChannel(channel.id)}
@@ -292,7 +291,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
         </div>
       </div>
 
-      <ScrollArea className="h-full w-full whitespace-nowrap rounded-md border border-border bg-background/30 flex-grow">
+      <ScrollArea className="relative h-[122px] w-full whitespace-nowrap rounded-md border border-border bg-background/30 flex-grow">
         <div
           ref={dropZoneRef}
           onDragOver={handleDragOver}
@@ -306,9 +305,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
           }}
         >
           {displayBlocks.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs">
-              <p>No blocks. Add to selected {channel.channelType} channel using controls above.</p>
-            </div>
+            <></>
           )}
           {displayBlocks.map((block) => {
             if (block.blockRenderType === 'audio') {
