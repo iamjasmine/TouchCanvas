@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
-import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon, LayersIcon, WorkflowIcon, Volume2Icon, Loader2, BeakerIcon } from 'lucide-react';
+import { PlayIcon, StopCircleIcon, PlusIcon, RepeatIcon, MicOffIcon, LayersIcon, WorkflowIcon, Volume2Icon, Loader2, BeakerIcon, ThermometerIcon } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 
 interface ControlsComponentProps {
@@ -17,14 +17,16 @@ interface ControlsComponentProps {
   masterVolume: number; // 0 to 1
   onPlay: () => void;
   onStop: () => void;
-  onAddBlock: () => void; 
-  onAddSilenceBlock: () => void; 
+  onAddBlock: () => void;
+  onAddSilenceBlock: () => void;
+  onAddTemperatureBlock: () => void; // New prop
   onToggleLoop: () => void;
   onToggleOutputMode: () => void;
   onMasterVolumeChange: (volume: number) => void;
   onTestAudio: () => void;
   canPlay: boolean;
-  disableAddBlock: boolean; 
+  disableAddAudioBlock: boolean; // Renamed for clarity
+  disableAddTemperatureBlock: boolean; // New prop
 }
 
 export const ControlsComponent: React.FC<ControlsComponentProps> = ({
@@ -37,35 +39,59 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
   onStop,
   onAddBlock,
   onAddSilenceBlock,
+  onAddTemperatureBlock,
   onToggleLoop,
   onToggleOutputMode,
   onMasterVolumeChange,
   onTestAudio,
   canPlay,
-  disableAddBlock,
+  disableAddAudioBlock,
+  disableAddTemperatureBlock,
 }) => {
+  const addAudioBlockTooltip = disableAddAudioBlock
+    ? "Select an audio channel first"
+    : (isActivatingAudio ? "Initializing audio..." : "Add Audio Block");
+
+  const addSilenceTooltip = disableAddAudioBlock
+    ? "Select an audio channel first"
+    : (isActivatingAudio ? "Initializing audio..." : "Add Silence Block");
+
+  const addTemperatureBlockTooltip = disableAddTemperatureBlock
+    ? "Select a thermal channel first"
+    : "Add Temperature Block";
+
   return (
     <Card className="p-4 bg-muted/80 rounded-lg shadow">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <Button 
-          onClick={onAddBlock} 
-          variant="outline" 
-          className="transition-transform hover:scale-105" 
-          disabled={disableAddBlock || isActivatingAudio} 
-          title={disableAddBlock ? "Select a channel first" : (isActivatingAudio ? "Initializing audio..." : "Add Audio Block")}
+        <Button
+          onClick={onAddBlock}
+          variant="outline"
+          className="transition-transform hover:scale-105"
+          disabled={disableAddAudioBlock || isActivatingAudio}
+          title={addAudioBlockTooltip}
         >
-          {isActivatingAudio && !disableAddBlock ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlusIcon className="mr-2 h-5 w-5" />}
+          {isActivatingAudio && !disableAddAudioBlock ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlusIcon className="mr-2 h-5 w-5" />}
           Add Audio
         </Button>
-        <Button 
-          onClick={onAddSilenceBlock} 
-          variant="outline" 
-          className="transition-transform hover:scale-105" 
-          disabled={disableAddBlock || isActivatingAudio} 
-          title={disableAddBlock ? "Select a channel first" : (isActivatingAudio ? "Initializing audio..." : "Add Silence Block")}
+        <Button
+          onClick={onAddSilenceBlock}
+          variant="outline"
+          className="transition-transform hover:scale-105"
+          disabled={disableAddAudioBlock || isActivatingAudio}
+          title={addSilenceTooltip}
         >
-          {isActivatingAudio && !disableAddBlock ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <MicOffIcon className="mr-2 h-5 w-5" />}
+          {isActivatingAudio && !disableAddAudioBlock ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <MicOffIcon className="mr-2 h-5 w-5" />}
           Add Silence
+        </Button>
+        <Button
+          onClick={onAddTemperatureBlock}
+          variant="outline"
+          className="transition-transform hover:scale-105"
+          disabled={disableAddTemperatureBlock || isActivatingAudio}
+          title={addTemperatureBlockTooltip}
+        >
+          <ThermometerIcon className="mr-2 h-5 w-5" />
+          Add Temp
         </Button>
         <Button
           onClick={onPlay}
@@ -73,14 +99,14 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           variant="default"
           className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-all duration-300 ease-in-out transform hover:scale-105 disabled:opacity-50"
           aria-label="Play audio sequence"
-          title={isActivatingAudio ? "Initializing audio..." : (isPlaying ? "Playback in progress" : (!canPlay ? "No blocks to play" : "Play"))}
+          title={isActivatingAudio ? "Initializing audio..." : (isPlaying ? "Playback in progress" : (!canPlay ? "No valid audio blocks to play or channel muted" : "Play"))}
         >
           {isActivatingAudio && canPlay && !isPlaying ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <PlayIcon className="mr-2 h-5 w-5" />}
           Play
         </Button>
         <Button
           onClick={onStop}
-          disabled={!isPlaying || isActivatingAudio} 
+          disabled={!isPlaying || isActivatingAudio}
           variant="destructive"
           className="transition-transform hover:scale-105 disabled:opacity-50"
           aria-label="Stop audio playback"
@@ -111,7 +137,7 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
           {isActivatingAudio ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <BeakerIcon className="mr-2 h-5 w-5" />}
           Test Audio
         </Button>
-        
+
         <div className="flex items-center space-x-2 p-2 rounded-md border border-input bg-background transition-transform hover:scale-105">
           {outputMode === 'mixed' ? <LayersIcon className="h-5 w-5 text-primary" /> : <WorkflowIcon className="h-5 w-5 text-accent" />}
           <Label htmlFor="output-mode-switch" className="cursor-pointer text-sm font-medium pr-1">
@@ -149,6 +175,3 @@ export const ControlsComponent: React.FC<ControlsComponentProps> = ({
     </Card>
   );
 };
-
-
-    

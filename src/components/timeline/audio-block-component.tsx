@@ -15,7 +15,7 @@ interface AudioBlockComponentProps {
   pixelsPerSecond: number;
   heightInRem?: number;
   className?: string;
-  channelId: string; // Added for drag data if needed, though not strictly for intra-channel
+  channelId: string; 
 }
 
 const waveformIcons: Record<WaveformType, React.ElementType> = {
@@ -79,18 +79,25 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
   isSelected,
   onClick,
   pixelsPerSecond,
-  heightInRem = 7,
+  heightInRem = 6, // default height e.g. 6rem (24 * 0.25rem)
   className,
   channelId,
 }) => {
   const [isBeingDragged, setIsBeingDragged] = useState(false);
-  const width = block.duration * pixelsPerSecond;
-  const heightClass = `h-${heightInRem * 4}`;
+  const width = (Number(block.duration) || 0) * pixelsPerSecond;
+  const heightStyle = `${heightInRem}rem`; // e.g., '6rem'
+
 
   const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-    e.dataTransfer.setData('application/json', JSON.stringify({ blockId: block.id, sourceChannelId: channelId }));
+    e.dataTransfer.setData('application/json', JSON.stringify({ 
+      blockId: block.id, 
+      sourceChannelId: channelId,
+      blockType: 'audio' // Identify block type for drag/drop
+    }));
     e.dataTransfer.effectAllowed = 'move';
     setIsBeingDragged(true);
+    // Add a data attribute for easier selection in drop handler
+    e.currentTarget.setAttribute('data-block-id', block.id);
   };
 
   const handleDragEnd = () => {
@@ -104,15 +111,15 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
         draggable
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        data-block-id={block.id}
         className={cn(
-          heightClass,
           'flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group',
           isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
           isBeingDragged ? 'opacity-50 ring-2 ring-accent scale-105' : '',
           `bg-gradient-to-br ${silentBlockColor} text-white`,
           className
         )}
-        style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px` }}
+        style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px`, height: heightStyle, boxSizing: 'border-box' }}
         onClick={onClick}
         role="button"
         aria-pressed={isSelected}
@@ -141,15 +148,15 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
+      data-block-id={block.id}
       className={cn(
-        heightClass,
         'flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group overflow-hidden',
         isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
         isBeingDragged ? 'opacity-50 ring-2 ring-accent scale-105' : '',
         `bg-gradient-to-br ${gradientClass} text-white`,
         className
       )}
-      style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px` }}
+      style={{ width: `${width}px`, minWidth: `${Math.max(pixelsPerSecond * 0.25, 30)}px`, height: heightStyle, boxSizing: 'border-box' }}
       onClick={onClick}
       role="button"
       aria-pressed={isSelected}
@@ -169,4 +176,3 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
     </Card>
   );
 };
-
