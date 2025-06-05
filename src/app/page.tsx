@@ -14,6 +14,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { PlusIcon, ListMusicIcon, ThermometerIcon } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const PIXELS_PER_SECOND = 60;
 const MIN_SUSTAIN_TIME = 0.05; // Minimum duration for the sustain phase
@@ -125,6 +135,8 @@ export default function MusicSyncPage() {
   const [isLooping, setIsLooping] = useState(false);
   const [outputMode, setOutputMode] = useState<'mixed' | 'independent'>('mixed');
   const [masterVolume, setMasterVolume] = useState<number>(0.75);
+  const [channelToDelete, setChannelToDelete] = useState<Channel | null>(null);
+
 
   const activeAudioNodesMap = useRef<Map<string, ActiveChannelAudioNodes[]>>(new Map());
   const animationFrameId = useRef<number | null>(null);
@@ -281,7 +293,17 @@ export default function MusicSyncPage() {
     toast({ title: "Audio Channel Added", description: `New ${newChannel.name} created.` });
   }, [channels, toast, ensureAudioIsActive]);
 
+  const thermalChannelExists = useMemo(() => channels.some(ch => ch.channelType === 'thermal'), [channels]);
+
   const handleAddThermalChannel = useCallback(async () => {
+    if (thermalChannelExists) {
+      toast({
+        title: "Limit Reached",
+        description: "Only one thermal channel is allowed. Please delete the existing thermal channel first.",
+        variant: "destructive"
+      });
+      return;
+    }
     if (!(await ensureAudioIsActive())) return;
 
     const newChannelId = crypto.randomUUID();
@@ -289,8 +311,8 @@ export default function MusicSyncPage() {
       id: newChannelId,
       name: `Thermal Channel ${channels.filter(ch => ch.channelType === 'thermal').length + 1}`,
       channelType: 'thermal',
-      volume: 0,
-      isMuted: true,
+      volume: 0, // Not applicable for thermal
+      isMuted: true, // Not applicable for thermal
       audioBlocks: [],
       temperatureBlocks: [],
     };
@@ -298,7 +320,44 @@ export default function MusicSyncPage() {
     setSelectedChannelId(newChannelId);
     setSelectedBlockId(null);
     toast({ title: "Thermal Channel Added", description: `New ${newChannel.name} created.` });
-  }, [channels, toast, ensureAudioIsActive]);
+  }, [channels, toast, ensureAudioIsActive, thermalChannelExists]);
+
+
+  const handleRequestDeleteChannel = (channelId: string) => {
+    if (channels.length <= 1) {
+      toast({
+        title: "Cannot Delete Channel",
+        description: "The project must have at least one channel.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const channel = channels.find((ch) => ch.id === channelId);
+    if (channel) {
+      setChannelToDelete(channel);
+    }
+  };
+
+  const executeDeleteChannel = () => {
+    if (!channelToDelete) return;
+    const idToDelete = channelToDelete.id;
+
+    setChannels(prev => {
+      const newChannels = prev.filter(ch => ch.id !== idToDelete);
+      if (selectedChannelId === idToDelete) {
+        setSelectedBlockId(null);
+        if (newChannels.length > 0) {
+          setSelectedChannelId(newChannels[0].id);
+        } else {
+          setSelectedChannelId(null); // Should not be strictly necessary due to the guard
+        }
+      }
+      return newChannels;
+    });
+
+    toast({ title: "Channel Deleted", description: `Channel "${channelToDelete.name}" has been removed.` });
+    setChannelToDelete(null); // Close the dialog
+  };
 
 
   const handleSelectChannel = useCallback((channelId: string) => {
@@ -325,7 +384,7 @@ export default function MusicSyncPage() {
     if (updates.isMuted !== undefined && channel.channelType === 'audio') {
         toast({ title: `Channel ${updates.isMuted ? "Muted" : "Unmuted"}`, description: `${channelName} is now ${updates.isMuted ? "muted" : "unmuted"}.` });
     }
-  }, [toast, channels]);
+  }, [toast, channels, selectedChannelId]);
 
 
   const handleAddBlock = useCallback(async () => {
@@ -417,11 +476,13 @@ export default function MusicSyncPage() {
             if (b.id === updatedBlockData.id) {
               const newDuration = Number(updatedBlockData.duration);
               if (isNaN(newDuration) || newDuration < 0) {
-                updatedBlockData.duration = b.duration;
+                updatedBlockData.duration = b.duration; // Revert to old duration if invalid
               }
-              if (!updatedBlockData.isSilent && !b.isSilent) {
+              if (!updatedBlockData.isSilent && !b.isSilent) { // Both are audible
                 let newAudible = { ...updatedBlockData } as AudibleAudioBlock;
                 const oldAudible = b as AudibleAudioBlock;
+                // If duration changed AND specific ADSR fields were NOT part of updatedBlockData (meaning they weren't explicitly changed by user)
+                // then scale them. Otherwise, respect the user's explicit changes.
                 if (newAudible.duration !== oldAudible.duration && oldAudible.duration > 0 && newAudible.duration > 0) {
                   const durationRatio = newAudible.duration / oldAudible.duration;
                   if (newAudible.attack === oldAudible.attack) newAudible.attack = oldAudible.attack * durationRatio;
@@ -430,7 +491,7 @@ export default function MusicSyncPage() {
                 }
                 return adjustADSR(newAudible);
               }
-              return updatedBlockData as AudioBlock;
+              return updatedBlockData as AudioBlock; // For silent blocks or type changes
             }
             return b;
           });
@@ -611,7 +672,6 @@ export default function MusicSyncPage() {
 
     channels.forEach(channel => {
       if (channel.channelType === 'thermal') {
-        // Handle thermal channel playback (not implemented yet, just log)
         let currentChannelDuration = 0;
         channel.temperatureBlocks.forEach(block => {
            const blockDurationNumber = Number(block.duration);
@@ -734,7 +794,7 @@ export default function MusicSyncPage() {
         console.log(`[MusicSyncPage] Current Tone.now() before setTimeout: ${Tone.now()}`);
 
         const timeoutDuration = (maxOverallDuration + PLAYBACK_START_DELAY + 0.2) * 1000;
-        console.log(`[MusicSyncPage] handlePlay: Scheduling end/loop timeout for ${timeoutDuration.toFixed(0)}ms from now.`);
+        console.log(`[MusicSyncPage] handlePlay: Scheduling end/loop timeout for ${timeoutDuration.toFixed(0)}ms from now. Loop status: ${isLoopingRef.current}`);
 
         if (loopTimeoutIdRef.current) {
           clearTimeout(loopTimeoutIdRef.current);
@@ -751,7 +811,7 @@ export default function MusicSyncPage() {
             if (isPlayingRef.current) {
                  if (isLoopingRef.current) {
                      console.log('[MusicSyncPage] Loop: Triggering handlePlay again.');
-                     handlePlay();
+                     handlePlay(); // This will call handleStop internally first
                  } else {
                      console.log('[MusicSyncPage] handlePlay: Automatic stop after max duration.');
                      handleStop();
@@ -763,10 +823,10 @@ export default function MusicSyncPage() {
 
     } else {
         console.log('[MusicSyncPage] handlePlay: Max overall duration is 0 or NaN, nothing to play. Resetting isPlaying.');
-        setIsPlaying(false);
+        setIsPlaying(false); // Ensure isPlaying is false if nothing to play
     }
 
-  }, [audioContextStarted, toast, channels, ensureAudioIsActive, handleStop, recalculateChannelBlockStartTimes]);
+  }, [channels, ensureAudioIsActive, handleStop, toast, recalculateChannelBlockStartTimes /* isLooping removed for stability with ref */]);
 
 
   useEffect(() => {
@@ -876,6 +936,7 @@ export default function MusicSyncPage() {
                   onUpdateChannel={handleUpdateChannel}
                   onSelectBlock={handleSelectBlock}
                   onReorderBlock={handleReorderBlock}
+                  onDeleteChannelRequest={handleRequestDeleteChannel}
                   pixelsPerSecond={PIXELS_PER_SECOND}
                   currentPlayTime={currentPlayTime}
                   isPlaying={isPlaying}
@@ -885,11 +946,16 @@ export default function MusicSyncPage() {
                 <Button onClick={handleAddAudioChannel} variant="outline" className="flex-1">
                   <ListMusicIcon className="mr-2 h-5 w-5" /> Add Audio Channel
                 </Button>
-                <Button onClick={handleAddThermalChannel} variant="outline" className="flex-1">
+                <Button
+                  onClick={handleAddThermalChannel}
+                  variant="outline"
+                  className="flex-1"
+                  disabled={thermalChannelExists}
+                >
                   <ThermometerIcon className="mr-2 h-5 w-5" /> Add Thermal Channel
                 </Button>
               </div>
-              {channels.length > 0 && isPlaying && (
+              {channels.length > 0 && isPlaying && selectedChannel?.channelType === 'audio' && (
                 <PlaybackIndicatorComponent
                   position={currentPlayTime * PIXELS_PER_SECOND}
                   isVisible={isPlaying}
@@ -905,11 +971,26 @@ export default function MusicSyncPage() {
               onUpdateBlock={handleUpdateBlock}
               onDeleteBlock={handleDeleteBlock}
               pixelsPerSecond={PIXELS_PER_SECOND}
-              key={selectedBlock?.id}
+              key={selectedBlock?.id} // Force re-render when block changes
             />
           </div>
         </div>
       </Card>
+      <AlertDialog open={!!channelToDelete} onOpenChange={(isOpen) => !isOpen && setChannelToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this channel?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Channel: "{channelToDelete?.name || 'Selected Channel'}"<br />
+              All blocks in this channel will be permanently lost. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setChannelToDelete(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={executeDeleteChannel}>Delete Channel</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
