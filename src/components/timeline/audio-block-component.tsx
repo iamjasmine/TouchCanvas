@@ -2,6 +2,7 @@
 "use client";
 
 import type React from 'react';
+import { useState } from 'react';
 import type { AudioBlock, WaveformType, AudibleAudioBlock, SilentAudioBlock } from '@/types';
 import { cn } from '@/lib/utils';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -10,10 +11,11 @@ import { Waves, Activity, Square, TrendingUp, MicOffIcon } from 'lucide-react';
 interface AudioBlockComponentProps {
   block: AudioBlock;
   isSelected: boolean;
-  onClick: (event: React.MouseEvent) => void; 
+  onClick: (event: React.MouseEvent) => void;
   pixelsPerSecond: number;
-  heightInRem?: number; 
-  className?: string; // Added className prop
+  heightInRem?: number;
+  className?: string;
+  channelId: string; // Added for drag data if needed, though not strictly for intra-channel
 }
 
 const waveformIcons: Record<WaveformType, React.ElementType> = {
@@ -32,7 +34,7 @@ const waveformColors: Record<WaveformType, string> = {
 
 const silentBlockColor = 'from-slate-300 to-slate-500';
 
-const ADSR_VISUAL_HEIGHT = 20; 
+const ADSR_VISUAL_HEIGHT = 20;
 
 const AdsrVisualizer: React.FC<{ block: AudibleAudioBlock; widthInPixels: number }> = ({ block, widthInPixels }) => {
   const { duration, attack, decay, sustainLevel, release } = block;
@@ -50,7 +52,7 @@ const AdsrVisualizer: React.FC<{ block: AudibleAudioBlock; widthInPixels: number
   const x_decay_end = timeToPx(attack + decay);
   const x_release_start = timeToPx(duration - release);
   const x_end = timeToPx(duration);
-  
+
   const p1x = Math.max(x_start, Math.min(x_attack_end, widthInPixels));
   const p2x = Math.max(p1x, Math.min(x_decay_end, widthInPixels));
   const p3x = Math.max(p2x, Math.min(x_release_start, widthInPixels));
@@ -77,20 +79,36 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
   isSelected,
   onClick,
   pixelsPerSecond,
-  heightInRem = 7, 
+  heightInRem = 7,
   className,
+  channelId,
 }) => {
+  const [isBeingDragged, setIsBeingDragged] = useState(false);
   const width = block.duration * pixelsPerSecond;
-  const heightClass = `h-${heightInRem * 4}`; 
+  const heightClass = `h-${heightInRem * 4}`;
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.setData('application/json', JSON.stringify({ blockId: block.id, sourceChannelId: channelId }));
+    e.dataTransfer.effectAllowed = 'move';
+    setIsBeingDragged(true);
+  };
+
+  const handleDragEnd = () => {
+    setIsBeingDragged(false);
+  };
 
   if (block.isSilent) {
     const silentBlock = block as SilentAudioBlock;
     return (
       <Card
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
         className={cn(
-          heightClass, 
+          heightClass,
           'flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group',
           isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
+          isBeingDragged ? 'opacity-50 ring-2 ring-accent scale-105' : '',
           `bg-gradient-to-br ${silentBlockColor} text-white`,
           className
         )}
@@ -120,10 +138,14 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
 
   return (
     <Card
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       className={cn(
-        heightClass, 
+        heightClass,
         'flex flex-col justify-between cursor-pointer transition-all duration-200 ease-in-out shadow-md hover:shadow-lg relative group overflow-hidden',
         isSelected ? 'ring-2 ring-primary ring-offset-2 shadow-xl scale-105' : 'hover:scale-[1.02]',
+        isBeingDragged ? 'opacity-50 ring-2 ring-accent scale-105' : '',
         `bg-gradient-to-br ${gradientClass} text-white`,
         className
       )}
@@ -147,3 +169,4 @@ export const AudioBlockComponent: React.FC<AudioBlockComponentProps> = ({
     </Card>
   );
 };
+

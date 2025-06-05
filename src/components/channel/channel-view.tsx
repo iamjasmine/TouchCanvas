@@ -2,7 +2,7 @@
 "use client";
 
 import type React from 'react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { Channel, AudioBlock } from '@/types';
 import { AudioBlockComponent } from '@/components/timeline/audio-block-component';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -20,12 +20,13 @@ interface ChannelViewComponentProps {
   onSelectChannel: (channelId: string) => void;
   onUpdateChannel: (channelId: string, updates: Partial<Pick<Channel, 'name' | 'volume' | 'isMuted'>>) => void;
   onSelectBlock: (channelId: string, blockId: string) => void;
+  onReorderBlock: (channelId: string, draggedBlockId: string, targetIndex: number) => void;
   pixelsPerSecond: number;
-  currentPlayTime: number; 
-  isPlaying: boolean;    
+  currentPlayTime: number;
+  isPlaying: boolean;
 }
 
-const CHANNEL_ROW_HEIGHT_PX = 128; 
+const CHANNEL_ROW_HEIGHT_PX = 128;
 
 export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   channel,
@@ -34,10 +35,12 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   onSelectChannel,
   onUpdateChannel,
   onSelectBlock,
+  onReorderBlock,
   pixelsPerSecond,
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState(channel.name);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditingName(e.target.value);
@@ -47,7 +50,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     if (editingName.trim() !== '') {
       onUpdateChannel(channel.id, { name: editingName.trim() });
     } else {
-      setEditingName(channel.name); 
+      setEditingName(channel.name);
     }
     setIsEditingName(false);
   };
@@ -57,6 +60,53 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
     setIsEditingName(false);
   };
 
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    // Optionally, add visual feedback for drag over (e.g., change border)
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const transferData = e.dataTransfer.getData('application/json');
+    if (!transferData) return;
+
+    const { blockId: draggedBlockId, sourceChannelId } = JSON.parse(transferData);
+
+    // For now, we only support intra-channel reordering.
+    // Future: if sourceChannelId !== channel.id, handle inter-channel move.
+    if (sourceChannelId !== channel.id) {
+        console.warn("Inter-channel drag and drop not yet fully supported via this handler path.");
+        // Potentially call a different handler or extend onReorderBlock
+        return;
+    }
+
+
+    if (!draggedBlockId || !dropZoneRef.current) return;
+
+    const dropZone = dropZoneRef.current;
+    const clientX = e.clientX;
+    let targetIndex = channel.audioBlocks.length;
+
+    const blockElements = Array.from(dropZone.children) as HTMLElement[];
+
+    for (let i = 0; i < blockElements.length; i++) {
+      const blockElement = blockElements[i];
+      // Ensure we're looking at actual block components, not other elements like placeholders
+      if (!blockElement.hasAttribute('draggable')) continue;
+
+      const rect = blockElement.getBoundingClientRect();
+      const midpoint = rect.left + rect.width / 2;
+
+      if (clientX < midpoint) {
+        targetIndex = i;
+        break;
+      }
+    }
+    onReorderBlock(channel.id, draggedBlockId, targetIndex);
+  };
+
+
   const totalTimelineWidth = Math.max(300, channel.audioBlocks.reduce((sum, block) => sum + block.duration * pixelsPerSecond, 0) + pixelsPerSecond);
 
   return (
@@ -64,7 +114,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
       className={cn(
         "flex flex-col p-3 transition-all duration-200 ease-in-out",
         isSelected ? "ring-2 ring-primary shadow-lg bg-muted/50" : "bg-muted/20 hover:bg-muted/30",
-        `h-${CHANNEL_ROW_HEIGHT_PX / 4}` 
+        `h-${CHANNEL_ROW_HEIGHT_PX / 4}`
       )}
       onClick={() => onSelectChannel(channel.id)}
     >
@@ -77,17 +127,17 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
                 value={editingName}
                 onChange={handleNameChange}
                 onBlur={saveName}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') cancelNameEdit(); }}
+                onKeyDown={(keyEvent) => { if (keyEvent.key === 'Enter') saveName(); if (keyEvent.key === 'Escape') cancelNameEdit(); }}
                 className="h-8 text-sm"
                 autoFocus
-                onClick={(e) => e.stopPropagation()} 
+                onClick={(e) => e.stopPropagation()}
               />
               <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); saveName(); }} className="h-8 w-8"><CheckIcon className="h-4 w-4"/></Button>
               <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); cancelNameEdit(); }} className="h-8 w-8"><XIcon className="h-4 w-4"/></Button>
             </>
           ) : (
             <>
-              <CardTitle 
+              <CardTitle
                 className="text-lg font-semibold hover:text-primary cursor-pointer"
                 onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }}
               >
@@ -117,7 +167,7 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
             value={[channel.volume]}
             onValueChange={(value) => onUpdateChannel(channel.id, { volume: value[0] })}
             className="w-24"
-            onClick={(e) => e.stopPropagation()} 
+            onClick={(e) => e.stopPropagation()}
             aria-label={`${channel.name} volume`}
           />
           <span className="text-xs w-8 text-right">{Math.round(channel.volume * 100)}%</span>
@@ -125,29 +175,32 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
       </div>
 
       <ScrollArea className="h-full w-full whitespace-nowrap rounded-md border border-border bg-background/30 flex-grow">
-        <div className="relative py-2 px-2 min-h-[80px]" style={{ width: totalTimelineWidth }}>
+        <div
+          ref={dropZoneRef}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className="relative py-2 px-2 min-h-[80px] flex space-x-2 items-center" // Added flex and items-center
+          style={{ width: totalTimelineWidth }}
+        >
           {channel.audioBlocks.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs">
               <p>No audio blocks. Add to selected channel.</p>
             </div>
           )}
-          <div className="flex space-x-2 items-center h-full">
-            {channel.audioBlocks.map((block) => (
-              <AudioBlockComponent
-                key={block.id}
-                block={block}
-                isSelected={block.id === selectedBlockId}
-                onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
-                pixelsPerSecond={pixelsPerSecond}
-                heightInRem={6} 
-              />
-            ))}
-          </div>
+          {channel.audioBlocks.map((block) => (
+            <AudioBlockComponent
+              key={block.id}
+              block={block}
+              isSelected={block.id === selectedBlockId}
+              onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
+              pixelsPerSecond={pixelsPerSecond}
+              heightInRem={6}
+              channelId={channel.id} // Pass channelId for drag data
+            />
+          ))}
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
     </Card>
   );
 };
-
-    
