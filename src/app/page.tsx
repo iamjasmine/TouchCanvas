@@ -437,6 +437,7 @@ export default function MusicSyncPage() {
       console.log(`[MusicSyncPage] handlePlay: Connecting ChannelVolumeNode for ${channel.name} to MasterVolumeNode.`);
       channelVolumeNode.connect(masterVolumeNodeRef.current);
       console.log(`[MusicSyncPage] handlePlay: MasterVolumeNode (after channel ${channel.name} connect) outputs: ${masterVolumeNodeRef.current.numberOfOutputs}, inputs: ${masterVolumeNodeRef.current.numberOfInputs}.`);
+      console.log("[MusicSyncPage] MasterVolumeNode (after channel connect) details:", masterVolumeNodeRef.current);
       
       let currentChannelAbsoluteTime = baseAbsoluteTime;
       let currentChannelDuration = 0;
@@ -452,7 +453,7 @@ export default function MusicSyncPage() {
         const audibleBlock = block as AudibleAudioBlock;
         console.log(`[MusicSyncPage] handlePlay: Channel ${channel.name}, Block ${blockIndex} (ID: ${audibleBlock.id}) PROCESSING. Freq=${audibleBlock.frequency}Hz, Dur=${audibleBlock.duration}s. Scheduled to start at absolute time: ${currentChannelAbsoluteTime.toFixed(3)}`);
         if (audibleBlock.frequency < 40 && audibleBlock.frequency > 0) {
-          console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} in channel ${channel.name} has a very low frequency (${audibleBlock.frequency}Hz).`);
+          console.warn(`[MusicSyncPage] handlePlay: Audible block ${audibleBlock.id} in channel ${channel.name} has a very low frequency (${audibleBlock.frequency}Hz). This may be inaudible or primarily felt as vibration.`);
         }
         if (audibleBlock.duration <= 0) {
             console.log(`[MusicSyncPage] handlePlay: Skipping audible block ${audibleBlock.id} due to zero or negative duration.`);
@@ -527,7 +528,7 @@ export default function MusicSyncPage() {
         setIsPlaying(false);
     }
 
-  }, [audioContextStarted, toast, masterVolume, channels, outputMode, ensureAudioIsActive, recalculateChannelBlockStartTimes]);
+  }, [audioContextStarted, toast, masterVolume, channels, outputMode, ensureAudioIsActive, recalculateChannelBlockStartTimes, currentPlayTime]);
 
   const isPlayingRef = useRef(isPlaying);
   useEffect(() => {
@@ -603,13 +604,14 @@ export default function MusicSyncPage() {
               <ListMusicIcon className="mr-3 h-8 w-8" />
               MusicSync
             </h1>
-            <p className="text-muted-foreground text-sm sm:text-base mt-1">Craft your unique sound sequences, channel by channel.</p>
+            
           </div>
         </header>
 
         <div className="p-4 sm:p-6 flex-grow flex flex-col space-y-4 sm:space-y-6 overflow-hidden">
           <ControlsComponent
             isPlaying={isPlaying}
+            // isLooping={isLooping} // Looping temporarily disabled
             isLooping={false} // Looping temporarily disabled
             isActivatingAudio={isActivatingAudio}
             outputMode={outputMode}
@@ -668,3 +670,4 @@ export default function MusicSyncPage() {
     </div>
   );
 }
+
