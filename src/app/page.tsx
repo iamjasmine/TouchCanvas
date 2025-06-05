@@ -386,17 +386,32 @@ export default function MusicSyncPage() {
     toast({ title: "Block Deleted", description: `Block removed from ${selectedChannel?.name}.`, variant: "destructive" });
   }, [selectedChannelId, selectedBlockId, selectedChannel?.name, recalculateChannelBlockStartTimes, toast]);
 
-  const handleToggleLoop = useCallback(() => setIsLooping(prev => {
-    const newLoopState = !prev;
+  const handleToggleLoop = useCallback(() => {
+    setIsLooping(prev => !prev);
+  }, []);
+
+  useEffect(() => {
     if (!isInitialMount.current.looping) {
-        toast({ title: newLoopState ? "Loop Enabled" : "Loop Disabled", description: newLoopState ? "Playback will now loop." : "Playback will not loop." });
+      toast({ 
+        title: isLooping ? "Loop Enabled" : "Loop Disabled", 
+        description: isLooping ? "Playback will now loop." : "Playback will not loop." 
+      });
     }
-    return newLoopState;
-  }), [toast]);
+  }, [isLooping, toast]);
+
 
   useEffect(() => { if (isInitialMount.current.looping) { isInitialMount.current.looping = false; } }, []);
-  useEffect(() => { if (!isInitialMount.current.outputMode) { if (toast) { toast({ title: "Output Mode Changed", description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.` }); } } else { isInitialMount.current.outputMode = false; } }, [outputMode, toast]);
-  // Removed masterVolume toast from useEffect to avoid issues with initial mount and direct rampTo.
+  
+  useEffect(() => { 
+    if (!isInitialMount.current.outputMode) { 
+      if (toast) { 
+        toast({ title: "Output Mode Changed", description: `Switched to ${outputMode === 'mixed' ? 'Mixed' : 'Independent'} Output.` }); 
+      } 
+    } else { 
+      isInitialMount.current.outputMode = false; 
+    } 
+  }, [outputMode, toast]);
+  
 
   const handleToggleOutputMode = useCallback(() => {
     setOutputMode(prevMode => (prevMode === 'mixed' ? 'independent' : 'mixed'));
