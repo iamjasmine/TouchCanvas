@@ -5,99 +5,99 @@
 
 @layer base {
   :root {
-    --background: 220 30% 98%; /* Very light gray-blue */
-    --foreground: 220 15% 25%; /* Dark desaturated blue for text */
+    --background: 210 20% 98%; /* Very light cool off-white */
+    --foreground: 210 25% 25%; /* Dark desaturated blue-gray for text */
 
     --card: 0 0% 100%; /* White */
-    --card-foreground: 220 15% 25%; /* Dark desaturated blue for card text */
+    --card-foreground: 210 25% 25%; /* Dark desaturated blue-gray for card text */
 
     --popover: 0 0% 100%; /* White */
-    --popover-foreground: 220 15% 25%; /* Dark desaturated blue for popover text */
+    --popover-foreground: 210 25% 25%; /* Dark desaturated blue-gray for popover text */
 
-    --primary: 340 80% 80%; /* Soft Pink */
-    --primary-foreground: 340 60% 30%; /* Darker Pink for text on primary */
+    --primary: 220 45% 45%; /* Solid Navy Blue */
+    --primary-foreground: 210 20% 95%; /* Very light, almost white for text on primary */
 
-    --secondary: 200 80% 80%; /* Soft Blue */
-    --secondary-foreground: 200 60% 30%; /* Darker Blue for text on secondary */
+    --secondary: 210 30% 75%; /* Lighter, desaturated blue */
+    --secondary-foreground: 220 30% 25%; /* Darker blue for text on secondary */
 
-    --muted: 220 25% 94%; /* Lighter gray-blue for muted backgrounds */
-    --muted-foreground: 220 15% 45%; /* Lighter dark blue for muted text */
+    --muted: 210 20% 94%; /* Light gray-blue for muted backgrounds */
+    --muted-foreground: 210 20% 50%; /* Medium gray-blue for muted text */
 
-    --accent: 270 80% 80%; /* Soft Purple */
-    --accent-foreground: 270 60% 30%; /* Darker Purple for text on accent */
+    --accent: 210 40% 60%; /* Mid-tone blue for highlights */
+    --accent-foreground: 210 20% 95%; /* Very light for text on accent */
 
-    --destructive: 0 70% 75%; /* Softer Red */
+    --destructive: 0 60% 50%; /* Serious, slightly darker red */
     --destructive-foreground: 0 0% 100%; /* White for text on destructive */
 
-    --border: 220 20% 90%; /* Light cool gray border */
-    --input: 220 25% 96%; /* Very light cool gray input background */
-    --ring: 270 80% 80%; /* Soft Purple for focus rings (matches accent) */
+    --border: 210 20% 88%; /* Light cool gray border */
+    --input: 210 20% 96%; /* Very light cool gray input background */
+    --ring: 220 45% 45%; /* Navy Blue for focus rings (matches primary) */
 
-    --radius: 0.75rem; /* More rounded corners */
+    --radius: 0.75rem; /* Existing rounded corners, can be adjusted for "seriousness" if needed */
 
-    /* Existing chart colors - can be adjusted if needed */
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    /* Chart colors - Navy/Blue/Gray theme */
+    --chart-1: 220 45% 50%; /* Primary Navy */
+    --chart-2: 210 40% 65%; /* Lighter Blue */
+    --chart-3: 210 25% 40%; /* Dark Slate Blue/Gray */
+    --chart-4: 200 30% 75%; /* Very Light Blue/Gray */
+    --chart-5: 220 15% 60%; /* Desaturated Navy/Gray */
 
-    /* Existing sidebar colors - can be adjusted if needed */
-    --sidebar-background: 220 30% 98%; /* Match overall background */
-    --sidebar-foreground: 220 15% 30%; /* Match overall foreground */
-    --sidebar-primary: 340 80% 75%; /* Primary pink, slightly darker for sidebar context */
-    --sidebar-primary-foreground: 340 60% 25%;
-    --sidebar-accent: 220 25% 92%; /* Muted version for sidebar accents */
-    --sidebar-accent-foreground: 220 15% 30%;
-    --sidebar-border: 220 20% 88%;
-    --sidebar-ring: 270 80% 80%; /* Soft Purple ring */
+    /* Sidebar colors - Navy theme */
+    --sidebar-background: 210 20% 97%; 
+    --sidebar-foreground: 210 25% 30%; 
+    --sidebar-primary: 220 45% 45%; 
+    --sidebar-primary-foreground: 210 20% 95%;
+    --sidebar-accent: 210 20% 92%; 
+    --sidebar-accent-foreground: 220 40% 35%;
+    --sidebar-border: 210 20% 85%;
+    --sidebar-ring: 220 45% 45%; 
   }
 
   .dark {
-    --background: 220 15% 12%; /* Very dark blue-gray */
-    --foreground: 220 25% 90%; /* Light gray-blue for text */
+    --background: 220 20% 10%; /* Very dark navy/blue-gray */
+    --foreground: 210 20% 90%; /* Light gray-blue for text */
 
-    --card: 220 15% 18%; /* Slightly lighter dark blue-gray for cards */
-    --card-foreground: 220 25% 90%;
+    --card: 220 20% 15%; /* Slightly lighter dark navy for cards */
+    --card-foreground: 210 20% 90%;
 
-    --popover: 220 15% 12%; /* Same as background */
-    --popover-foreground: 220 25% 90%;
+    --popover: 220 20% 10%; /* Same as background */
+    --popover-foreground: 210 20% 90%;
 
-    --primary: 340 70% 65%; /* Darker pastel Pink */
-    --primary-foreground: 340 80% 95%; /* Very light pink for text on dark primary */
+    --primary: 220 50% 65%; /* Lighter, but still navy, for dark mode */
+    --primary-foreground: 220 25% 15%; /* Darker navy for text on light primary in dark mode */
 
-    --secondary: 200 70% 65%; /* Darker pastel Blue */
-    --secondary-foreground: 200 80% 95%; /* Very light blue for text on dark secondary */
+    --secondary: 210 30% 30%; /* Darker desaturated blue */
+    --secondary-foreground: 210 20% 85%; /* Lighter blue for text on dark secondary */
 
-    --muted: 220 15% 22%; /* Darker muted blue-gray */
-    --muted-foreground: 220 20% 70%; /* Lighter muted text */
+    --muted: 220 20% 20%; /* Darker muted blue-gray */
+    --muted-foreground: 210 20% 70%; /* Lighter muted text */
 
-    --accent: 270 70% 65%; /* Darker pastel Purple */
-    --accent-foreground: 270 80% 95%; /* Very light purple for text on dark accent */
+    --accent: 210 40% 50%; /* Mid-tone blue for dark mode, less vibrant */
+    --accent-foreground: 210 20% 95%;
 
-    --destructive: 0 60% 55%; /* Darker, slightly desaturated Red */
+    --destructive: 0 50% 50%; /* Darker, slightly desaturated red */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 15% 30%; /* Darker border */
-    --input: 220 15% 25%; /* Darker input background */
-    --ring: 270 70% 65%; /* Darker pastel Purple for focus rings */
+    --border: 210 20% 30%; /* Darker border */
+    --input: 210 20% 22%; /* Darker input background */
+    --ring: 220 50% 65%; /* Lighter Navy for focus rings in dark mode */
 
-    /* Existing chart colors - can be adjusted if needed for dark mode */
-    --chart-1: 340 70% 60%; /* Example: Pinkish for dark mode chart */
-    --chart-2: 200 70% 60%; /* Example: Bluish for dark mode chart */
-    --chart-3: 270 70% 60%; /* Example: Purplish for dark mode chart */
-    --chart-4: 43 70% 60%;  /* Example: Orangeish */
-    --chart-5: 150 60% 50%; /* Example: Greenish */
-
-    /* Existing sidebar colors for dark mode - can be adjusted */
-    --sidebar-background: 220 15% 10%; /* Slightly darker than main dark bg */
-    --sidebar-foreground: 220 25% 85%;
-    --sidebar-primary: 340 70% 60%; /* Dark mode primary pink */
-    --sidebar-primary-foreground: 340 80% 92%;
-    --sidebar-accent: 220 15% 20%; /* Dark mode sidebar accent */
-    --sidebar-accent-foreground: 220 25% 85%;
-    --sidebar-border: 220 15% 25%;
-    --sidebar-ring: 270 70% 65%; /* Dark mode purple ring */
+    /* Chart colors for dark mode - Navy/Blue/Gray theme */
+    --chart-1: 220 50% 70%; /* Lighter Primary Navy */
+    --chart-2: 210 40% 55%; /* Mid Blue */
+    --chart-3: 210 25% 75%; /* Light Slate Blue/Gray */
+    --chart-4: 200 30% 40%; /* Darker Blue/Gray */
+    --chart-5: 220 15% 50%; /* Mid Desaturated Navy/Gray */
+    
+    /* Sidebar colors for dark mode - Navy theme */
+    --sidebar-background: 220 20% 8%; 
+    --sidebar-foreground: 210 20% 88%;
+    --sidebar-primary: 220 50% 65%; 
+    --sidebar-primary-foreground: 220 25% 15%;
+    --sidebar-accent: 220 20% 18%; 
+    --sidebar-accent-foreground: 210 20% 90%;
+    --sidebar-border: 210 20% 25%;
+    --sidebar-ring: 220 50% 65%; 
   }
 }
 
@@ -111,7 +111,8 @@
   }
 }
 
-/* Custom gradient text utility */
+/* Custom gradient text utility - update if new primary/accent/secondary are not visually distinct enough for a gradient */
 .text-gradient-primary-accent-secondary {
   @apply bg-clip-text text-transparent bg-gradient-to-r from-primary via-accent to-secondary;
 }
+
