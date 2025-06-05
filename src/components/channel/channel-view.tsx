@@ -2,8 +2,8 @@
 "use client";
 
 import type React from 'react';
-import { useState, useRef } from 'react';
-import type { Channel, AudioBlock } from '@/types';
+import { useState, useRef, useMemo } from 'react';
+import type { Channel, AudioBlock, TemperatureBlock as TemperatureBlockType } from '@/types';
 import { AudioBlockComponent } from '@/components/timeline/audio-block-component';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Volume2Icon, MicIcon, MicOffIcon, Edit3Icon, CheckIcon, XIcon } from 'lucide-react';
 
+import TemperatureBlockComponent from '@/components/timeline/temperature-block-component';
 interface ChannelViewComponentProps {
   channel: Channel;
   isSelected: boolean;
@@ -26,7 +27,7 @@ interface ChannelViewComponentProps {
   isPlaying: boolean;
 }
 
-const CHANNEL_ROW_HEIGHT_PX = 128;
+const CHANNEL_ROW_HEIGHT_PX = 128; // Corresponds to h-32 in Tailwind (32 * 0.25rem = 8rem = 128px)
 
 export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   channel,
@@ -37,6 +38,8 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   onSelectBlock,
   onReorderBlock,
   pixelsPerSecond,
+  // currentPlayTime, // Prop not used directly in this component's rendering logic
+  // isPlaying, // Prop not used directly in this component's rendering logic
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editingName, setEditingName] = useState(channel.name);
@@ -63,7 +66,6 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    // Optionally, add visual feedback for drag over (e.g., change border)
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -73,26 +75,21 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
 
     const { blockId: draggedBlockId, sourceChannelId } = JSON.parse(transferData);
 
-    // For now, we only support intra-channel reordering.
-    // Future: if sourceChannelId !== channel.id, handle inter-channel move.
     if (sourceChannelId !== channel.id) {
         console.warn("Inter-channel drag and drop not yet fully supported via this handler path.");
-        // Potentially call a different handler or extend onReorderBlock
         return;
     }
-
 
     if (!draggedBlockId || !dropZoneRef.current) return;
 
     const dropZone = dropZoneRef.current;
     const clientX = e.clientX;
-    let targetIndex = channel.audioBlocks.length;
+    let targetIndex = channel.audioBlocks.length; // Default to end of audioBlocks or allBlocks
 
     const blockElements = Array.from(dropZone.children) as HTMLElement[];
 
     for (let i = 0; i < blockElements.length; i++) {
       const blockElement = blockElements[i];
-      // Ensure we're looking at actual block components, not other elements like placeholders
       if (!blockElement.hasAttribute('draggable')) continue;
 
       const rect = blockElement.getBoundingClientRect();
@@ -103,18 +100,23 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
         break;
       }
     }
+    // Assuming onReorderBlock handles reordering within the appropriate list (audioBlocks or a combined list if applicable)
     onReorderBlock(channel.id, draggedBlockId, targetIndex);
   };
 
-
-  const totalTimelineWidth = Math.max(300, channel.audioBlocks.reduce((sum, block) => sum + block.duration * pixelsPerSecond, 0) + pixelsPerSecond);
+  const allBlocks = useMemo(() => {
+    const combined = [
+      ...channel.audioBlocks.map(b => ({ ...b, blockRenderType: 'audio' as const })),
+      ...(channel.temperatureBlocks || []).map(b => ({ ...b, blockRenderType: 'temperature' as const })),
+    ];
+    return combined.sort((a, b) => a.startTime - b.startTime);
+  }, [channel.audioBlocks, channel.temperatureBlocks]);
 
   return (
     <Card
       className={cn(
-        "flex flex-col p-3 transition-all duration-200 ease-in-out",
-        isSelected ? "ring-2 ring-primary shadow-lg bg-muted/50" : "bg-muted/20 hover:bg-muted/30",
-        `h-${CHANNEL_ROW_HEIGHT_PX / 4}`
+        "flex flex-col p-3 transition-all duration-200 ease-in-out h-32", // Use static h-32 for 128px height
+        isSelected ? "ring-2 ring-primary shadow-lg bg-muted/50" : "bg-muted/20 hover:bg-muted/30"
       )}
       onClick={() => onSelectChannel(channel.id)}
     >
@@ -179,25 +181,50 @@ export const ChannelViewComponent: React.FC<ChannelViewComponentProps> = ({
           ref={dropZoneRef}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
-          className="relative py-2 px-2 min-h-[80px] flex space-x-2 items-center" // Added flex and items-center
-          style={{ width: totalTimelineWidth }}
+          className="relative py-2 px-2 min-h-[80px] flex space-x-2 items-center"
+          style={{
+            width: Math.max(
+              300, // Minimum width
+              allBlocks.reduce((sum, block) => sum + (Number(block.duration) || 0) * pixelsPerSecond, 0) + pixelsPerSecond // Sum of block widths + buffer
+            ),
+          }}
         >
-          {channel.audioBlocks.length === 0 && (
+          {allBlocks.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-xs">
-              <p>No audio blocks. Add to selected channel.</p>
+              <p>No blocks. Add to selected channel.</p>
             </div>
           )}
-          {channel.audioBlocks.map((block) => (
-            <AudioBlockComponent
-              key={block.id}
-              block={block}
-              isSelected={block.id === selectedBlockId}
-              onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
-              pixelsPerSecond={pixelsPerSecond}
-              heightInRem={6}
-              channelId={channel.id} // Pass channelId for drag data
-            />
-          ))}
+          {allBlocks.map((block) => {
+            if (block.blockRenderType === 'audio') {
+              // The block here is one of the elements from the `audioBlocks` array initially,
+              // so it conforms to AudioBlock or SilentAudioBlock.
+              // AudioBlockComponent expects an AudioBlock type (which includes isSilent property).
+              return (
+                <AudioBlockComponent
+                  key={block.id}
+                  block={block as AudioBlock} // Assert type for AudioBlockComponent
+                  isSelected={block.id === selectedBlockId}
+                  onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
+                  pixelsPerSecond={pixelsPerSecond}
+                  heightInRem={6}
+                  channelId={channel.id}
+                />
+              );
+            } else if (block.blockRenderType === 'temperature') {
+              return (
+                <TemperatureBlockComponent
+                  key={block.id}
+                  block={block as TemperatureBlockType} // Assert type
+                  pixelsPerSecond={pixelsPerSecond}
+                  heightInRem={6}
+                  // Add isSelected, onClick for TemperatureBlockComponent if they become interactive
+                  // isSelected={block.id === selectedBlockId}
+                  // onClick={(e) => { e.stopPropagation(); onSelectBlock(channel.id, block.id);}}
+                />
+              );
+            }
+            return null;
+          })}
         </div>
         <ScrollBar orientation="horizontal" />
       </ScrollArea>

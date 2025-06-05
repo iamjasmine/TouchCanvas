@@ -1,0 +1,244 @@
+import React, { useState, useRef } from "react";
+import "./App.css";
+
+/**
+ * Some helpful links:
+ * chrome://bluetooth-internals
+ * chrome://device-log/
+ * https://sites.google.com/a/chromium.org/dev/developers/how-tos/file-web-bluetooth-bugs
+ * https://developer.mozilla.org/en-US/docs/Web/API/Web_Bluetooth_API
+ * https://webbluetoothcg.github.io/web-bluetooth/
+ */
+
+const ServiceUUIDs = {
+  PFService: "5df89308-0b98-11eb-adc1-0242ac120002",
+};
+
+const Commands = {
+  ON: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x38, 0x30, 0x30, 0x30, 0x30, 0x31,
+    0x30, 0x30, 0x61, 0x61, 0x0d, 0x0a,
+  ]),
+  OFF: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x38, 0x30, 0x30, 0x30, 0x30, 0x30,
+    0x30, 0x30, 0x61, 0x62, 0x0d, 0x0a,
+  ]),
+  CoolFastHigh: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x35,
+    0x30, 0x30, 0x39, 0x36, 0x0d, 0x0a,
+  ]),
+  CoolHigh: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x34,
+    0x30, 0x30, 0x39, 0x37, 0x0d, 0x0a,
+  ]),
+  CoolMid: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x33,
+    0x30, 0x30, 0x39, 0x38, 0x0d, 0x0a,
+  ]),
+  CoolLow: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x32,
+    0x30, 0x30, 0x39, 0x39, 0x0d, 0x0a,
+  ]),
+  HotHigh: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x38,
+    0x30, 0x30, 0x39, 0x33, 0x0d, 0x0a,
+  ]),
+  HotMid: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x37,
+    0x30, 0x30, 0x39, 0x34, 0x0d, 0x0a,
+  ]),
+  HotLow: new Uint8Array([
+    0x35, 0x35, 0x61, 0x30, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x36,
+    0x30, 0x30, 0x39, 0x35, 0x0d, 0x0a,
+  ]),
+  RequestMode: new Uint8Array([
+    0x35, 0x35, 0x61, 0x31, 0x65, 0x30, 0x39, 0x30, 0x30, 0x30, 0x30, 0x30,
+    0x30, 0x30, 0x39, 0x61, 0x0d, 0x0a,
+  ]),
+};
+
+type BluetoothServerProps = {
+  server: BluetoothRemoteGATTServer | undefined;
+};
+
+function WritingComponent(props: BluetoothServerProps) {
+  const write = async (command: Uint8Array) => {
+    const server = props.server;
+    if (server == null) {
+      console.log("Not Connected yet. Please connect to Pebble Feel.");
+      return;
+    }
+    const service = await server.getPrimaryService(ServiceUUIDs.PFService);
+    const characteristic = await service.getCharacteristic(
+      "8eb21104-0b98-11eb-adc1-0242ac120002",
+    );
+    await characteristic.writeValue(command);
+  };
+
+  return (
+    <>
+      <h2>Write</h2>
+      <p>Enable Bit</p>
+      <button onClick={() => write(Commands.ON)}>ON</button>
+      <button onClick={() => write(Commands.OFF)}>OFF</button>
+      <p>Mode</p>
+      <div>
+        <button onClick={() => write(Commands.CoolFastHigh)}>
+          Cool Fast High
+        </button>
+        <button onClick={() => write(Commands.CoolHigh)}>Cool High</button>
+        <button onClick={() => write(Commands.CoolMid)}>Cool Mid</button>
+        <button onClick={() => write(Commands.CoolLow)}>Cool Low</button>
+      </div>
+      <div>
+        <button onClick={() => write(Commands.HotHigh)}>Hot High</button>
+        <button onClick={() => write(Commands.HotMid)}>Hot Mid</button>
+        <button onClick={() => write(Commands.HotLow)}>Hot Low</button>
+      </div>
+    </>
+  );
+}
+
+function SubscribingComponent(props: BluetoothServerProps) {
+  const [notification, setNotification] = useState("-");
+  const [currentMode, setCurrentMode] = useState("-");
+  const characteristicRef = useRef<BluetoothRemoteGATTCharacteristic | null>(
+    null,
+  );
+
+  const handler = (event: Event) => {
+    const c = event.target as BluetoothRemoteGATTCharacteristic | null;
+    // binary buffer to ASCII
+    const decoder = new TextDecoder();
+    const buffer1 = decoder.decode(new Uint8Array(c.value?.buffer));
+    setNotification(buffer1);
+
+    // ASCII to hex
+    // "55A2E09000050094" -> 0x55A2E09000050094
+    const buffer2 = new Uint8Array(
+      buffer1.match(/../g).map((h) => parseInt(h, 16)),
+    );
+
+    // Pick the Mode bits from buffer
+    // 05
+    setCurrentMode(buffer2[5].toString(16));
+  };
+
+  const subscribe = async () => {
+    const server = props.server;
+    if (server == null) {
+      console.log("Not Connected yet. Please connect to Pebble Feel.");
+      return;
+    }
+    const service = await server.getPrimaryService(ServiceUUIDs.PFService);
+    const characteristic = await service.getCharacteristic(
+      "8eb20e7a-0b98-11eb-adc1-0242ac120002",
+    );
+    characteristicRef.current = characteristic;
+    characteristic.addEventListener("characteristicvaluechanged", handler);
+    await characteristic.startNotifications();
+  };
+
+  const unsubscribe = async () => {
+    characteristicRef.current?.removeEventListener(
+      "characteristicvaluechanged",
+      handler,
+    );
+    await characteristicRef.current?.stopNotifications();
+  };
+
+  const request = async (command: Uint8Array) => {
+    const server = props.server;
+    if (server == null) {
+      console.log("Not Connected yet. Please connect to Pebble Feel.");
+      return;
+    }
+    const service = await server.getPrimaryService(ServiceUUIDs.PFService);
+    const characteristic = await service.getCharacteristic(
+      "8eb20e7a-0b98-11eb-adc1-0242ac120002",
+    );
+    await characteristic.writeValue(command);
+  };
+
+  return (
+    <>
+      <h2>Subscribe</h2>
+      <>
+        <button onClick={subscribe}>Subscribe</button>
+        <button onClick={() => request(Commands.RequestMode)}>
+          Requet Current Mode
+        </button>
+        <button onClick={unsubscribe}>Unsubscribe</button>
+      </>
+      <p>
+        Received: {notification} ( Mode {currentMode} )
+      </p>
+    </>
+  );
+}
+
+function App() {
+  const [connected, setConnected] = useState(false);
+  const deviceRef = useRef<BluetoothDevice | null>(null);
+  const onDisconnected = () => {
+    setConnected(false);
+  };
+
+  const connect = async () => {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [
+        {
+          services: ["generic_access", ServiceUUIDs.PFService],
+        },
+      ],
+    });
+    deviceRef.current = device;
+    device.addEventListener("gattserverdisconnected", onDisconnected);
+    await device.gatt?.connect();
+    setConnected(true);
+  };
+
+  const disconnect = async () => {
+    deviceRef.current?.removeEventListener(
+      "gattserverdisconnected",
+      onDisconnected,
+    );
+    deviceRef.current?.gatt?.disconnect();
+    setConnected(false);
+  };
+
+  return (
+    <div className="App">
+      <h1>GATT Communication Example</h1>
+      <p>
+        ⚠ Open in a new tab or window. This will not work inside iFrame due to
+        security restrictions.
+      </p>
+      <p>⚠ Tested with Chrome on Windows. May not work on macOS.</p>
+      <hr />
+      <>
+        <h2>Connect</h2>
+        <button
+          style={{ opacity: !connected ? "1.0" : "0.25" }}
+          onClick={connect}
+        >
+          Connect
+        </button>
+        <button
+          style={{ opacity: connected ? "1.0" : "0.25" }}
+          onClick={disconnect}
+        >
+          Disconnect
+        </button>
+      </>
+      <div style={{ opacity: connected ? "1.0" : "0.25" }}>
+        <hr />
+        <WritingComponent server={deviceRef.current?.gatt} />
+        <hr />
+        <SubscribingComponent server={deviceRef.current?.gatt} />
+      </div>
+    </div>
+  );
+}
+
+export default App;

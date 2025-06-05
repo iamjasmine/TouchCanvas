@@ -21,7 +21,16 @@ export interface SilentAudioBlock extends BaseBlock {
   isSilent: true;
 }
 
+export interface TemperatureBlock extends BaseBlock {
+  type: 'cool' | 'hot';
+  intensity: 'low' | 'mid' | 'high';
+}
+
 export type AudioBlock = AudibleAudioBlock | SilentAudioBlock;
+
+export type AnyBlock = AudioBlock | TemperatureBlock;
+
+export type TemperatureIntensity = 'low' | 'mid' | 'high';
 
 export interface Channel {
   id: string;
@@ -30,4 +39,6 @@ export interface Channel {
   isMuted: boolean;
   audioBlocks: AudioBlock[];
   // Future: pan, effects, etc.
+  temperatureBlocks: TemperatureBlock[];
 }
+
