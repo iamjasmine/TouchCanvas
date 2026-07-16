@@ -1,21 +1,102 @@
-# **App Name**: MusicSync
+# TouchCanvas - 設計仕様書
 
-## Core Features:
+## アプリケーション概要
 
-- Timeline Interface: Horizontal timeline interface for arranging audio blocks sequentially.
-- Audio Block Creation: Button to create new audio blocks, positioned after the last block.
-- Audio Block Properties: Audio blocks with properties: waveform (sin, triangle, square, sawtooth), frequency (10-300Hz), duration (1-5 seconds).
-- Block Manipulation: Click to select blocks, drag edges to resize duration.
-- Property Panel: Property panel appears when a block is selected, with intuitive sliders to control properties.
-- Play Audio: Play button for sequential playback of all blocks in the timeline.
-- Stop Audio: Stop button to halt audio playback.
-- Playback Indicator: Visual playback indicator moving across the timeline during playback.
+TouchCanvasは音楽制作とサーマル（温度）フィードバックを組み合わせたインタラクティブなWebアプリケーションです。
 
-## Style Guidelines:
+## 主要機能
 
-- Pastel color palette with soft pinks, blues, and purples.
-- Use of gradients to add depth and visual interest.
-- White (#FFFFFF) or very light gray (#FAFAFA) backgrounds to maximize readability and visual clarity.
-- Rounded corners on all UI elements to create a soft and approachable aesthetic.
-- Rounded and slightly playful sans-serif fonts to enhance the cute and friendly vibe.
-- Gentle transitions and animations, such as fade-ins, slide-ups, and scale-ups, to enhance the user experience.
+### 🎵 オーディオシステム
+- **マルチチャンネル**: 複数のオーディオチャンネルをサポート
+- **ブロックベース**: タイムライン上にオーディオブロックを配置
+- **ADSR制御**: Attack, Decay, Sustain, Release パラメータによる音響制御
+- **波形選択**: sine, triangle, square, sawtooth波形
+- **周波数制御**: 10-300Hz範囲での周波数調整
+- **サイレンスブロック**: 無音区間の挿入
+
+### 🌡️ サーマルシステム
+- **温度制御**: 冷却/加熱の制御
+- **強度設定**: low, mid, high, rapid の4段階
+- **Bluetooth連携**: 外部温度デバイスとの通信
+- **同期再生**: オーディオと温度フィードバックの同期
+
+### 🎛️ インターフェース
+- **タイムライン**: 水平タイムラインでのブロック配置
+- **ドラッグ&ドロップ**: ブロックの並び替えとリサイズ
+- **プロパティパネル**: 選択されたブロックの詳細編集
+- **リアルタイム再生**: 視覚的な再生インジケーター
+- **ループ機能**: 連続再生モード
+- **ボリューム制御**: マスターボリュームとチャンネル個別調整
+
+### 🎮 操作機能
+- **再生/停止**: ワンクリックでの再生制御
+- **テストオーディオ**: オーディオ出力の動作確認
+- **チャンネル管理**: オーディオ/サーマルチャンネルの追加・削除
+- **ブロック操作**: 追加、削除、編集、複製
+
+## 技術仕様
+
+### フロントエンド
+- **フレームワーク**: Next.js 15 (React 18)
+- **言語**: TypeScript
+- **オーディオエンジン**: Tone.js 15.0.4
+- **UIライブラリ**: Radix UI
+- **スタイリング**: Tailwind CSS
+- **アイコン**: Lucide React
+
+### データ構造
+- **チャンネル**: audio/thermal タイプのチャンネル
+- **オーディオブロック**: 周波数、波形、ADSR設定
+- **温度ブロック**: 温度タイプ（cool/hot）と強度
+- **状態管理**: React Hooks (useState, useRef, useCallback)
+
+### 外部連携
+- **Web Bluetooth API**: 温度デバイスとの通信
+- **Web Audio API**: 高品質オーディオ処理
+- **Firebase**: 認証・データ保存（オプション）
+- **Google AI**: AI機能統合（オプション）
+
+## デザインガイドライン
+
+### 配色
+- **パステルカラー**: ソフトなピンク、ブルー、パープル
+- **背景**: 白（#FFFFFF）または極薄グレー（#FAFAFA）
+- **グラデーション**: 奥行きと視覚的興味を追加
+
+### UI要素
+- **角丸デザイン**: すべてのUI要素に丸角を適用
+- **ソフトアニメーション**: フェードイン、スライドアップ、スケールアップ
+- **直感的操作**: ドラッグ&ドロップ、スライダー、ワンクリック操作
+- **レスポンシブ**: デスクトップ・タブレット・モバイル対応
+
+### フォント
+- **タイプ**: 丸みを帯びたサンセリフフォント
+- **スタイル**: フレンドリーで親しみやすい印象
+
+## ユーザーエクスペリエンス
+
+### 基本フロー
+1. **チャンネル作成**: オーディオ/サーマルチャンネルを追加
+2. **ブロック配置**: タイムライン上にブロックを配置
+3. **パラメータ調整**: プロパティパネルで詳細設定
+4. **再生確認**: リアルタイムでの音響・温度フィードバック確認
+5. **調整・最適化**: 必要に応じてブロック編集
+
+### アクセシビリティ
+- **キーボード操作**: 全機能をキーボードで操作可能
+- **スクリーンリーダー**: ARIA属性による読み上げ対応
+- **コントラスト**: 十分な色彩コントラストの確保
+- **フォーカス**: 明確なフォーカス表示
+
+## パフォーマンス要件
+
+### オーディオ
+- **レイテンシ**: 100ms以下の低遅延
+- **サンプルレート**: 44.1kHz
+- **ビット深度**: 16bit
+- **同時チャンネル**: 最大8チャンネル
+
+### Bluetooth
+- **接続時間**: 5秒以内
+- **レスポンス**: 50ms以内
+- **通信安定性**: 99%以上の成功率

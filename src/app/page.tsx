@@ -241,6 +241,8 @@ export default function MusicSyncPage() {
     }
   };
 
+
+
   const handleMasterVolumeChange = useCallback((newVolume: number) => {
     setMasterVolume(Math.max(0, Math.min(1, newVolume)));
   }, []);
